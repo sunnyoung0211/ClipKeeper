@@ -14,6 +14,10 @@ import AppKit
 /// - `-DemoBackdrop YES`    在面板 / 菜单后面垫一张彩色背景，让玻璃效果在截图里更明显，
 ///                          也避免截到屏幕上的其他内容
 /// - `-DemoSettingsHeight 580`  设置窗口的高度（截图时让窗口刚好停在某个分组的结尾）
+/// - `-DemoUpdate check`    启动后自动检查更新。配合 `-UpdateFakeVersion 0.1.0`（假装当前是旧版本）
+///                          可以看到"发现新版本"
+/// - `-DemoUpdate install`  检查后直接下载并安装，用来测试完整的更新流程。
+///                          注意：会替换掉正在运行的这个 ClipKeeper.app，并打开新版本
 enum DemoData {
     /// 放入示例数据
     static func fill(_ store: ClipboardStore) {
@@ -30,20 +34,22 @@ enum DemoData {
             ClipItem(kind: .text, text: string, contentHash: "demo-text-" + string)
         }
         func files(_ names: [String]) -> ClipItem {
-            let paths = names.map { demoFile(named: $0) }
+            // 图片文件写入真正的图片内容，这样列表里能显示它的预览图
+            let paths = names.map { demoFile(named: $0, contents: $0.hasSuffix(".png") ? designMockupPNG() : nil) }
             return ClipItem(kind: .file, text: names.joined(separator: "\n"), filePaths: paths,
                             contentHash: "demo-file-" + names.joined())
         }
 
         // 从旧到新依次加入（列表里新的排在前面）
         add(text("收到，我稍后处理，谢谢 🙏"), app: "微信", minutes: 60 * 26, pinned: true)
-        add(files(["设计稿.png", "产品原型.key", "会议纪要.docx"]), app: "访达", minutes: 300)
+        add(files(["设计稿.png", "产品原型.key", "会议纪要.docx"]), app: "访达", minutes: 20)
         add(text("npm run build"), app: "终端", minutes: 180)
         add(text("ClipKeeper 是一个常驻 macOS 菜单栏的剪贴板历史工具，复制过的内容都会被记下来。"), app: "备忘录", minutes: 120)
         add(text("周五下午 3 点在 3 楼会议室开周会，记得带上电脑。"), app: "邮件", minutes: 64)
         add(text("let greeting = \"Hello, ClipKeeper!\""), app: "Xcode", minutes: 26)
         add(files(["季度报告.pdf"]), app: "访达", minutes: 15)
-        if let image = demoImage() {
+        if let png = sunsetPNG() {
+            let image = ClipItem(kind: .image, imageData: png, imageWidth: 1200, imageHeight: 800, contentHash: "demo-image")
             add(image, app: "预览", minutes: 8)
         }
         add(text("https://developer.apple.com/documentation/swiftui"), app: "Safari", minutes: 3)
@@ -74,26 +80,31 @@ enum DemoData {
             default:
                 break
             }
+            if let mode = defaults.string(forKey: "DemoUpdate") {
+                Task {
+                    await app.updater.checkForUpdates()
+                    if mode == "install" { app.updater.installUpdate() }
+                }
+            }
         }
     }
 
     // MARK: - 示例文件和图片
 
-    /// 在临时文件夹里建一个空文件，让列表能显示出对应类型的文件图标
-    private static func demoFile(named name: String) -> String {
+    /// 在临时文件夹里建一个示例文件（没给内容时是空文件），让列表能显示出对应类型的文件图标
+    private static func demoFile(named name: String, contents: Data? = nil) -> String {
         let folder = FileManager.default.temporaryDirectory.appending(path: "ClipKeeperDemo", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appending(path: name)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: Data())
+        if contents != nil || !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: contents ?? Data())
         }
         return url.path
     }
 
     /// 画一张"日落"风格的示例图片
-    private static func demoImage() -> ClipItem? {
-        let size = NSSize(width: 1200, height: 800)
-        let image = NSImage(size: size, flipped: false) { rect in
+    private static func sunsetPNG() -> Data? {
+        png(size: NSSize(width: 1200, height: 800)) { rect in
             NSGradient(colors: [
                 NSColor(red: 0.98, green: 0.55, blue: 0.35, alpha: 1),
                 NSColor(red: 0.93, green: 0.35, blue: 0.55, alpha: 1),
@@ -103,12 +114,37 @@ enum DemoData {
             NSBezierPath(ovalIn: NSRect(x: 450, y: 220, width: 300, height: 300)).fill()
             NSColor(red: 0.25, green: 0.18, blue: 0.45, alpha: 0.9).setFill()
             NSBezierPath(rect: NSRect(x: 0, y: 0, width: 1200, height: 260)).fill()
+        }
+    }
+
+    /// 画一张"设计稿"风格的示例图片（竖版，模拟一个手机界面）
+    private static func designMockupPNG() -> Data? {
+        png(size: NSSize(width: 600, height: 900)) { rect in
+            NSColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1).setFill()
+            rect.fill()
+            NSGradient(colors: [
+                NSColor(red: 0.30, green: 0.55, blue: 0.98, alpha: 1),
+                NSColor(red: 0.45, green: 0.40, blue: 0.95, alpha: 1),
+            ])?.draw(in: NSRect(x: 0, y: 620, width: 600, height: 280), angle: -30)
+            NSColor.white.setFill()
+            for row in 0..<4 {
+                NSBezierPath(roundedRect: NSRect(x: 40, y: 470 - row * 140, width: 520, height: 110),
+                             xRadius: 22, yRadius: 22).fill()
+            }
+            NSColor(red: 1.0, green: 0.55, blue: 0.45, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: 70, y: 690, width: 120, height: 120)).fill()
+        }
+    }
+
+    /// 用代码画一张图片，返回 PNG 数据
+    private static func png(size: NSSize, draw: @escaping (NSRect) -> Void) -> Data? {
+        let image = NSImage(size: size, flipped: false) { rect in
+            draw(rect)
             return true
         }
         guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        return ClipItem(kind: .image, imageData: png, imageWidth: 1200, imageHeight: 800, contentHash: "demo-image")
+              let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     // MARK: - 截图辅助
@@ -118,8 +154,15 @@ enum DemoData {
         guard let panel = NSApp.windows.first(where: { $0 is FloatingPanel }),
               let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
-        panel.setFrameOrigin(NSPoint(x: visible.midX - panel.frame.width / 2,
-                                     y: visible.midY - panel.frame.height / 2))
+        var origin = NSPoint(x: visible.midX - panel.frame.width / 2,
+                             y: visible.midY - panel.frame.height / 2)
+        // 鼠标停在面板上时，那一行会显示"悬停"的高亮，截图不好看，所以把面板挪到远离鼠标的一侧
+        let mouse = NSEvent.mouseLocation
+        if NSRect(origin: origin, size: panel.frame.size).insetBy(dx: -70, dy: -50).contains(mouse) {
+            let quarter = visible.width / 4
+            origin.x = (mouse.x > visible.midX ? visible.minX + quarter : visible.maxX - quarter) - panel.frame.width / 2
+        }
+        panel.setFrameOrigin(origin)
 
         let backdropFrame = panel.frame.insetBy(dx: -70, dy: -50)
         let backdrop = NSWindow(contentRect: backdropFrame, styleMask: .borderless, backing: .buffered, defer: false)

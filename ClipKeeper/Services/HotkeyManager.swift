@@ -13,15 +13,14 @@ final class HotkeyManager {
 
     /// 注册快捷键（会先取消之前注册的）。返回是否注册成功。
     @discardableResult
-    func register(_ option: HotkeyOption) -> Bool {
+    func register(_ hotkey: Hotkey) -> Bool {
         unregister()
         installHandlerIfNeeded()
 
-        let key = option.carbonKey
         // 快捷键的身份标识：signature 是任意 4 个字符组成的编号，这里用 "CLKP"
         let hotKeyID = EventHotKeyID(signature: OSType(0x434C_4B50), id: 1)
         let status = RegisterEventHotKey(
-            key.keyCode, key.modifiers, hotKeyID,
+            hotkey.keyCode, hotkey.modifiers, hotKeyID,
             GetApplicationEventTarget(), 0, &hotKeyRef
         )
         return status == noErr
@@ -53,18 +52,5 @@ final class HotkeyManager {
             }
             return noErr
         }, 1, &eventType, selfPointer, &eventHandler)
-    }
-}
-
-extension HotkeyOption {
-    /// 转换成 Carbon API 需要的"按键码 + 修饰键"
-    var carbonKey: (keyCode: UInt32, modifiers: UInt32) {
-        let v = UInt32(kVK_ANSI_V)
-        switch self {
-        case .cmdShiftV:  return (v, UInt32(cmdKey | shiftKey))
-        case .optionCmdV: return (v, UInt32(cmdKey | optionKey))
-        case .ctrlCmdV:   return (v, UInt32(cmdKey | controlKey))
-        case .ctrlShiftV: return (v, UInt32(controlKey | shiftKey))
-        }
     }
 }

@@ -77,7 +77,7 @@ struct HistoryPanelView: View {
                             item: item,
                             index: index,
                             isSelected: item.id == model.selectedID,
-                            thumbnail: model.store.thumbnail(for: item)
+                            store: model.store
                         )
                         .id(item.id)
                         .contentShape(Rectangle())

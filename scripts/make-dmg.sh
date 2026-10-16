@@ -74,12 +74,15 @@ ClipKeeper 安装说明
      xattr -dr com.apple.quarantine /Applications/ClipKeeper.app ）
 
 3. ClipKeeper 只在屏幕右上角的菜单栏显示一个回形针图标，不会出现在程序坞里。
-   按 ⇧⌘V 打开剪贴板历史。
+   按 ⇧⌘V 打开剪贴板历史（可以在设置里换成别的快捷键）。
 
 4. 第一次使用"自动粘贴"时，请按提示在
    「系统设置 → 隐私与安全性 → 辅助功能」里打开 ClipKeeper。
    以后升级到新版本时，如果自动粘贴不起作用了，请在辅助功能列表里选中 ClipKeeper，
    点「−」删掉，再重新打开 ClipKeeper 授权一次。
+
+5. 以后有新版本时，在「设置 → 更新」里点「检查更新」，再点「下载并安装」即可，
+   不用再手动下载安装包。
 
 系统要求：macOS 14 或更高版本，支持 Apple 芯片和 Intel 芯片的 Mac。
 EOF

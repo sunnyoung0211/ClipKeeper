@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UniformTypeIdentifiers
 
 /// 剪贴板内容的类型
 enum ClipKind: String {
@@ -87,5 +88,23 @@ final class ClipItem {
             }
             return names.first ?? "文件"
         }
+    }
+
+    /// 能不能在列表里显示预览图：图片，或者复制的第一个文件是图片文件
+    var hasImagePreview: Bool {
+        switch kind {
+        case .image: return true
+        case .file:  return imageFilePath != nil
+        case .text:  return false
+        }
+    }
+
+    /// 复制的文件中，第一个是图片文件（并且还在原来的位置）时，返回它的路径
+    var imageFilePath: String? {
+        guard kind == .file, let path = filePaths?.first,
+              let type = UTType(filenameExtension: (path as NSString).pathExtension),
+              type.conforms(to: .image),
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return path
     }
 }

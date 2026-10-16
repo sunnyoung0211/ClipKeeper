@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftData
 
 /// 管理所有剪贴板历史：增加、删除、置顶、搜索，以及保存到数据库。
@@ -13,7 +14,7 @@ final class ClipboardStore {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let container: ModelContainer
     @ObservationIgnored private var context: ModelContext { container.mainContext }
-    /// 图片缩略图缓存，避免每次刷新界面都重新解码图片
+    /// 预览图缓存，避免每次刷新界面都重新解码图片
     @ObservationIgnored private let thumbnailCache = NSCache<NSString, NSImage>()
 
     /// 数据保存的文件夹：~/Library/Application Support/ClipKeeper
@@ -95,12 +96,31 @@ final class ClipboardStore {
         }
     }
 
-    /// 获取图片记录的缩略图
-    func thumbnail(for item: ClipItem) -> NSImage? {
-        guard item.kind == .image else { return nil }
+    /// 已经生成好的预览图（还没生成时返回 nil）
+    func cachedThumbnail(for item: ClipItem) -> NSImage? {
+        thumbnailCache.object(forKey: item.id.uuidString as NSString)
+    }
+
+    /// 生成预览图：把图片缩小后再显示，省内存，滚动列表也更流畅。
+    /// 解码图片比较耗时（尤其是几千像素的截图），所以放到后台线程去做，不会卡住界面。
+    func loadThumbnail(for item: ClipItem) async -> NSImage? {
+        if let cached = cachedThumbnail(for: item) { return cached }
+
+        let source: ThumbnailSource
+        if item.kind == .image, let data = item.imageData {
+            source = .data(data)
+        } else if let path = item.imageFilePath {
+            source = .file(URL(fileURLWithPath: path))
+        } else {
+            return nil
+        }
         let key = item.id.uuidString as NSString
-        if let cached = thumbnailCache.object(forKey: key) { return cached }
-        guard let data = item.imageData, let image = NSImage(data: data) else { return nil }
+        let cgImage = await Task.detached(priority: .userInitiated) {
+            makeThumbnail(from: source)
+        }.value
+        guard let cgImage else { return nil }
+
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         thumbnailCache.setObject(image, forKey: key)
         return image
     }
@@ -159,4 +179,29 @@ final class ClipboardStore {
             return try! ModelContainer(for: ClipItem.self, configurations: memoryConfig)
         }
     }
+}
+
+// MARK: - 生成预览图（在后台线程运行）
+
+/// 预览图的来源：图片记录用保存的图片数据，文件记录直接读取图片文件
+nonisolated private enum ThumbnailSource: Sendable {
+    case data(Data)
+    case file(URL)
+}
+
+/// 用 ImageIO 直接解码出缩小的图片，比先完整解码再缩小快得多、也省内存
+nonisolated private func makeThumbnail(from source: ThumbnailSource) -> CGImage? {
+    let imageSource: CGImageSource?
+    switch source {
+    case .data(let data): imageSource = CGImageSourceCreateWithData(data as CFData, nil)
+    case .file(let url):  imageSource = CGImageSourceCreateWithURL(url as CFURL, nil)
+    }
+    guard let imageSource else { return nil }
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,   // 按照片里记录的方向摆正
+        kCGImageSourceThumbnailMaxPixelSize: 256,            // 列表里的预览图不大，256 像素足够清晰
+        kCGImageSourceShouldCacheImmediately: true,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)
 }

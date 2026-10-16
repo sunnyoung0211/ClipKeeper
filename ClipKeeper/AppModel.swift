@@ -10,6 +10,7 @@ import SwiftUI
 /// - PasteService      写回剪贴板 / 自动粘贴
 /// - HotkeyManager     全局快捷键
 /// - PanelController   浮动的历史面板
+/// - UpdateService     检查更新、下载并安装新版本
 final class AppModel {
     /// 全局唯一的实例（单例），界面里通过 AppModel.shared 访问
     static let shared = AppModel()
@@ -19,7 +20,10 @@ final class AppModel {
     let monitor: ClipboardMonitor
     let pasteService: PasteService
     let panelController: PanelController
+    let updater = UpdateService()
     private let hotkeyManager = HotkeyManager()
+    /// 是否正在录制新快捷键（录制期间暂停当前的快捷键）
+    private var isHotkeyPaused = false
     private var settingsWindow: NSWindow?
 
     private init() {
@@ -33,7 +37,6 @@ final class AppModel {
         panelController.onSelect = { [weak self] item in self?.paste(item) }
         panelController.onCopyOnly = { [weak self] item in _ = self?.copy(item) }
         hotkeyManager.onPressed = { [weak self] in self?.panelController.toggle() }
-        settings.onHotkeyChanged = { [weak self] in self?.registerHotkey() }
     }
 
     /// 应用启动完成后调用
@@ -105,6 +108,34 @@ final class AppModel {
         // 菜单栏应用默认不在前台，需要主动激活，窗口才会显示在最前面
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - 快捷键
+
+    /// 换成新的快捷键。成功返回 nil；不能用时返回原因，并保持原来的快捷键不变。
+    func changeHotkey(to newHotkey: Hotkey) -> String? {
+        if let problem = newHotkey.problem { return problem }
+        if !Self.isDemoMode {
+            guard hotkeyManager.register(newHotkey) else {
+                if !isHotkeyPaused { registerHotkey() }   // 新的注册失败，换回原来的
+                return "\(newHotkey.display) 注册失败，可能已被系统或其他应用占用，请换一个"
+            }
+        }
+        settings.hotkey = newHotkey
+        return nil
+    }
+
+    /// 录制新快捷键时，先暂时停用当前的快捷键，否则按下它会直接打开面板，录制框收不到
+    func pauseHotkey() {
+        isHotkeyPaused = true
+        hotkeyManager.unregister()
+    }
+
+    /// 录制结束后恢复快捷键
+    func resumeHotkey() {
+        isHotkeyPaused = false
+        guard !Self.isDemoMode else { return }   // 演示模式本来就不注册快捷键
+        registerHotkey()
     }
 
     /// 注册快捷键。

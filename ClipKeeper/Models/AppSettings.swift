@@ -1,27 +1,6 @@
 import Foundation
 import Observation
 
-/// 可选的呼出快捷键。
-/// 为了保持简单，这里提供几个预设，而不是让用户自己录制任意按键。
-enum HotkeyOption: String, CaseIterable, Identifiable {
-    case cmdShiftV
-    case optionCmdV
-    case ctrlCmdV
-    case ctrlShiftV
-
-    var id: String { rawValue }
-
-    /// 显示给用户看的文字
-    var display: String {
-        switch self {
-        case .cmdShiftV:  return "⇧⌘V"
-        case .optionCmdV: return "⌥⌘V"
-        case .ctrlCmdV:   return "⌃⌘V"
-        case .ctrlShiftV: return "⌃⇧V"
-        }
-    }
-}
-
 /// 历史面板出现在哪里
 enum PanelPlacement: String, CaseIterable, Identifiable {
     case nearMouse      // 鼠标的右下方
@@ -59,11 +38,11 @@ final class AppSettings {
         didSet { defaults.set(isPaused, forKey: Keys.isPaused) }
     }
 
-    /// 呼出历史面板的快捷键
-    var hotkey: HotkeyOption {
+    /// 呼出历史面板的快捷键。
+    /// 注意：这里只负责保存，真正注册快捷键由 AppModel.changeHotkey 完成。
+    var hotkey: Hotkey {
         didSet {
-            defaults.set(hotkey.rawValue, forKey: Keys.hotkey)
-            onHotkeyChanged?()
+            defaults.set(["keyCode": Int(hotkey.keyCode), "modifiers": Int(hotkey.modifiers)], forKey: Keys.hotkey)
         }
     }
 
@@ -77,16 +56,12 @@ final class AppSettings {
         didSet { defaults.set(ignoredBundleIDs, forKey: Keys.ignoredBundleIDs) }
     }
 
-    /// 快捷键改变时要做的事（由 AppModel 设置，用来重新注册快捷键）
-    @ObservationIgnored var onHotkeyChanged: (() -> Void)?
-
     init() {
         // 第一次运行时使用的默认值
         defaults.register(defaults: [
             Keys.maxHistory: 200,
             Keys.autoPaste: true,
             Keys.isPaused: false,
-            Keys.hotkey: HotkeyOption.cmdShiftV.rawValue,
             Keys.panelPlacement: PanelPlacement.nearMouse.rawValue,
             // 默认忽略"钥匙串访问"和"密码"应用
             Keys.ignoredBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
@@ -94,9 +69,22 @@ final class AppSettings {
         maxHistory = defaults.integer(forKey: Keys.maxHistory)
         autoPaste = defaults.bool(forKey: Keys.autoPaste)
         isPaused = defaults.bool(forKey: Keys.isPaused)
-        hotkey = HotkeyOption(rawValue: defaults.string(forKey: Keys.hotkey) ?? "") ?? .cmdShiftV
+        hotkey = Self.loadHotkey(from: defaults)
         panelPlacement = PanelPlacement(rawValue: defaults.string(forKey: Keys.panelPlacement) ?? "") ?? .nearMouse
         ignoredBundleIDs = defaults.stringArray(forKey: Keys.ignoredBundleIDs) ?? []
+    }
+
+    /// 读取保存的快捷键。旧版本保存的是预设的名字（字符串），新版本保存的是按键码 + 修饰键（字典）
+    private static func loadHotkey(from defaults: UserDefaults) -> Hotkey {
+        if let saved = defaults.dictionary(forKey: Keys.hotkey),
+           let keyCode = saved["keyCode"] as? Int,
+           let modifiers = saved["modifiers"] as? Int {
+            return Hotkey(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers))
+        }
+        if let legacyName = defaults.string(forKey: Keys.hotkey) {
+            return Hotkey(legacyName: legacyName) ?? .default
+        }
+        return .default
     }
 
     private enum Keys {

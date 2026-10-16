@@ -37,10 +37,8 @@ struct SettingsView: View {
                     .onChange(of: launchAtLogin) { _, enabled in
                         setLaunchAtLogin(enabled)
                     }
-                Picker("呼出快捷键", selection: $settings.hotkey) {
-                    ForEach(HotkeyOption.allCases) { option in
-                        Text(option.display).tag(option)
-                    }
+                LabeledContent("呼出快捷键") {
+                    HotkeyRecorderView(app: app)
                 }
                 Picker("最多保存", selection: $settings.maxHistory) {
                     ForEach(historyLimits, id: \.self) { limit in
@@ -133,6 +131,8 @@ struct SettingsView: View {
                     showClearConfirm = true
                 }
             }
+
+            UpdateSection(updater: app.updater)
         }
         .formStyle(.grouped)
         .frame(width: 480, height: Self.windowHeight)

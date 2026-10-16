@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
   <img src="https://img.shields.io/badge/Swift-5-orange" alt="Swift 5">
   <img src="https://img.shields.io/badge/UI-SwiftUI%20%2B%20AppKit-informational" alt="SwiftUI + AppKit">
-  <img src="https://img.shields.io/badge/version-0.1.1-brightgreen" alt="版本 0.1.1">
+  <img src="https://img.shields.io/badge/version-0.1.2-brightgreen" alt="版本 0.1.2">
 </p>
 
 ---
@@ -30,20 +30,22 @@
     <td align="center"><img src="docs/screenshots/menu.png" alt="菜单栏菜单"><br><sub>菜单栏菜单：最近的记录和常用操作</sub></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/screenshots/settings.png" width="480" alt="设置窗口"><br><sub>设置：开机自启、快捷键、面板位置、自动粘贴等</sub></td>
+    <td align="center" colspan="2"><img src="docs/screenshots/settings.png" width="480" alt="设置窗口"><br><sub>设置：开机自启、自定义快捷键、面板位置、自动粘贴、检查更新等</sub></td>
   </tr>
 </table>
 
 ## ✨ 功能
 
 - **自动记录**：文本、图片、文件（在访达中复制的）都会保存下来，重复内容自动去重
-- **随叫随到**：全局快捷键在鼠标旁边弹出浮动面板，直接打字就能搜索
+- **随叫随到**：全局快捷键在鼠标旁边弹出浮动面板，直接打字就能搜索；快捷键可以自己录制
+- **图片预览**：复制的图片（包括在访达里复制的图片文件）直接在列表里显示预览图
 - **一键粘贴**：选中记录后自动粘贴到你正在使用的应用里
 - **液态玻璃界面**：在 macOS 26 上使用系统的 Liquid Glass 风格，旧系统自动换成毛玻璃
 - **随意摆放**：面板可以拖动、调整大小，会记住你上次的设置
 - **置顶常用内容**：置顶的记录不会被自动清理
 - **保护隐私**：自动忽略 1Password 等密码管理器复制的密码，也可以指定不记录某些应用；随时可以暂停记录
-- **贴心设置**：开机自启、快捷键、最多保存条数、面板出现位置
+- **贴心设置**：开机自启、自定义快捷键、最多保存条数、面板出现位置
+- **一键更新**：在设置里检查新版本，下载、安装、重新打开一步完成
 
 ## 💻 系统要求
 
@@ -63,6 +65,9 @@
 > 熟悉终端的话，也可以用这条命令代替：`xattr -dr com.apple.quarantine /Applications/ClipKeeper.app`
 
 装好后，屏幕右上角的菜单栏会出现一个回形针图标，按 <kbd>⇧</kbd><kbd>⌘</kbd><kbd>V</kbd> 打开剪贴板历史。
+
+**升级**：从 v0.1.2 开始，可以在「设置 → 更新」里点「检查更新」，发现新版本后点「下载并安装」，
+ClipKeeper 会自动下载、替换并重新打开，不用再手动下载 DMG。（v0.1.1 需要手动下载安装一次 v0.1.2。）
 
 > 升级到新版本后，如果自动粘贴不起作用了：在「系统设置 → 隐私与安全性 → 辅助功能」里选中 ClipKeeper，点 `−` 删掉，再重新打开 ClipKeeper 授权一次即可。
 
@@ -118,6 +123,18 @@ cd ClipKeeper
 | <kbd>esc</kbd> | 关闭面板 |
 | 右键 | 更多操作（例如"仅复制，不粘贴"） |
 
+### 更换呼出快捷键
+
+在设置里点一下「呼出快捷键」右边的按键框，然后直接按下想要的组合（比如 <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd>）就保存好了，按 <kbd>esc</kbd> 取消。
+旁边的 ↺ 按钮可以恢复默认的 <kbd>⇧</kbd><kbd>⌘</kbd><kbd>V</kbd>。
+
+为了不影响日常使用，下面这些组合不能用，录制时会提示原因：
+
+- 没有 <kbd>⌘</kbd>、<kbd>⌥</kbd>、<kbd>⌃</kbd> 中任何一个（<kbd>F1</kbd> ~ <kbd>F20</kbd> 除外，可以单独使用）
+- 只用 <kbd>⌘</kbd>，比如 <kbd>⌘</kbd><kbd>C</kbd>：会和应用里的常用快捷键冲突
+- 只用 <kbd>⌥</kbd> 或 <kbd>⌥</kbd><kbd>⇧</kbd>：这些组合是用来输入特殊字符的
+- 已经是系统快捷键（「系统设置 → 键盘 → 键盘快捷键」里开启的），比如 <kbd>⌃</kbd><kbd>空格</kbd>
+
 ### 调整面板
 
 - **移动**：拖动顶部搜索框周围或底部提示栏的空白处
@@ -161,6 +178,9 @@ cd ClipKeeper
 | 不能记录密码 | 跳过带有 `org.nspasteboard.ConcealedType` 等标记的内容 | `ClipboardMonitor` |
 | 面板不能抢走当前应用的焦点 | 使用 `.nonactivatingPanel` 样式的 `NSPanel`，⌘V 才能粘贴到原来的应用 | `PanelController` |
 | 全局快捷键 | 使用 Carbon 的 `RegisterEventHotKey`，不需要额外权限 | `HotkeyManager` |
+| 录制快捷键 | 用 `NSEvent` 的本地监听在按键分发前截获组合键；录制期间暂停当前快捷键；用 `CopySymbolicHotKeys` 检查是否和系统快捷键重复 | `HotkeyRecorderView`、`Hotkey` |
+| 列表里的图片预览 | 用 ImageIO 在后台线程直接解码出缩小的图片并缓存，几千像素的截图也不会卡 | `ClipboardStore` |
+| 自动更新 | 查询 GitHub 最新 Release → 下载 DMG 并核对 SHA-256 → 挂载后取出应用，检查 Bundle ID、版本号和签名 → 替换当前应用并重新打开 | `UpdateService` |
 | 中文输入法打拼音时按回车 | 检测输入框里是否有"未确认的文字"，有就把按键留给输入法 | `PanelController` |
 | 液态玻璃 + 圆角阴影 | 无边框透明窗口 + `NSGlassEffectView`；系统阴影会出现直角边框，所以自己画圆角阴影 | `PanelContainerView` |
 | 打开访达 / 系统设置 | macOS 14 起切换前台是"协作式"的，要先 `yieldActivation` 让出前台 | `OpenHelper` |
@@ -174,21 +194,25 @@ ClipKeeper/
 ├── AppModel.swift               "总管"：创建各模块并把它们连接起来  ← 建议从这里开始读
 ├── Models/
 │   ├── ClipItem.swift           一条剪贴板记录（SwiftData 数据模型）
+│   ├── Hotkey.swift             快捷键：显示、检查能不能用
 │   └── AppSettings.swift        设置项（保存在 UserDefaults）
 ├── Services/
 │   ├── ClipboardMonitor.swift   监听剪贴板，发现新内容就保存
 │   ├── ClipboardStore.swift     历史数据的增删改查、去重、数量限制
 │   ├── PasteService.swift       写回剪贴板 + 模拟 ⌘V 自动粘贴 + 权限引导
 │   ├── HotkeyManager.swift      全局快捷键
-│   └── OpenHelper.swift         打开访达 / 系统设置
+│   ├── UpdateService.swift      检查更新、下载并安装新版本
+│   └── OpenHelper.swift         打开访达 / 系统设置 / 网页
 ├── Views/
 │   ├── MenuBarContentView.swift 菜单栏菜单
 │   ├── PanelController.swift    浮动面板窗口：位置、大小、键盘操作
 │   ├── PanelContainerView.swift 面板外壳：玻璃背景、阴影、拖边缩放
 │   ├── PanelViewModel.swift     面板的状态和逻辑（搜索、选中、置顶…）
 │   ├── HistoryPanelView.swift   面板界面：搜索框 + 列表 + 快捷键提示
-│   ├── ClipRowView.swift        列表中的一行
-│   └── SettingsView.swift       设置窗口
+│   ├── ClipRowView.swift        列表中的一行（图片显示预览图）
+│   ├── SettingsView.swift       设置窗口
+│   ├── HotkeyRecorderView.swift 设置里的快捷键录制框
+│   └── UpdateSection.swift      设置里的"更新"分组
 ├── Debug/
 │   └── DemoData.swift           演示模式（只在 Debug 版本中编译，用来截图）
 └── Assets.xcassets              App 图标、菜单栏图标
@@ -216,8 +240,12 @@ scripts/
   为了不泄露个人信息，安装包里的应用会改用"临时签名"（开发证书里带有开发者的 Apple ID 邮箱），
   并去掉调试符号（里面记录了编译时的本机路径，包含用户名）。脚本最后会自动检查，发现个人信息就停止打包。
   发布新版本前，先在 Xcode 的 target 设置里修改 `Version`（MARKETING_VERSION）和 `Build`（CURRENT_PROJECT_VERSION）
+- **发布新版本**：在 GitHub 上新建 Release，标签用 `v` + 版本号（比如 `v0.1.2`，要和 `Version` 一致），并上传打包好的 DMG。
+  已安装的用户在「设置 → 更新」里就能检查到它并一键安装。如果你 fork 了这个项目，记得把 `UpdateService.repository` 改成你自己的仓库
 - **演示模式（用来截图）**：Debug 版本支持启动参数 `-DemoMode YES`，会使用一批示例数据（只在内存里，不读取也不修改真实的剪贴板历史），
   再配合 `-DemoOpen panel/settings/menu`、`-DemoQuery 关键字`、`-DemoBackdrop YES` 打开对应界面。详见 `ClipKeeper/Debug/DemoData.swift`
+- **测试更新流程**：Debug 版本支持启动参数 `-UpdateFakeVersion 0.1.0`，假装当前是旧版本，这样就能在设置里看到"发现新版本"。
+  注意：点「下载并安装」会把正在运行的这个应用（比如 Xcode 编译出来的）替换成 GitHub 上的发布版本
 - **快速调试界面**：在 Xcode 的 `Product → Scheme → Edit Scheme… → Run → Arguments` 中添加启动参数 `-ShowPanelOnLaunch YES`，启动后会直接打开面板（只在 Debug 版本生效）
 - **控制台里的系统日志**：`com.apple.linkd.autoShortcut`、`ViewBridge to RemoteViewService Terminated` 之类的信息是 macOS 系统框架输出的，不影响使用，可以忽略
 - **设计方案的管理**：`Design/` 下的方案文件夹只会提交**正在使用**的那一个，其他方案只保留在本地（由 `.gitignore` 控制）。
@@ -243,12 +271,18 @@ scripts/
 ## 🗺 路线图
 
 - [ ] 保留富文本格式（目前按纯文本保存和粘贴）
-- [ ] 自定义录制快捷键（目前从 4 个预设中选择）
-- [ ] 选中记录时显示完整内容 / 大图预览
+- [ ] 选中记录时显示完整内容 / 大图预览（目前列表里是小预览图）
+- [ ] 定期自动检查更新（目前需要在设置里手动检查）
 - [ ] 用 Icon Composer 把图标升级为 macOS 26 分层图标（支持深色、染色外观；分层素材已在 `IconComposer/` 里准备好）
 - [ ] 适配新版 macOS 的剪贴板隐私提示（如果系统询问是否允许 ClipKeeper 读取剪贴板，请选择允许）
 
 ## 📝 版本历史
+
+### v0.1.2（2026-10-16）
+
+- 支持自定义呼出快捷键：在设置里点一下按键框，直接按下新的组合即可
+- 复制的图片（包括访达里复制的图片文件）在列表中直接显示预览图
+- 支持在设置中检查更新，一键下载并安装新版本
 
 ### v0.1.1（2026-10-16）
 

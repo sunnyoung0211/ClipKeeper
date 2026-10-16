@@ -1,6 +1,6 @@
 import AppKit
 
-/// 从 ClipKeeper 里打开其他应用（访达、系统设置）。
+/// 从 ClipKeeper 里打开其他应用（访达、系统设置、浏览器）。
 ///
 /// 为什么要专门写一个工具？
 /// macOS 14 开始，应用之间切换前台变成了"协作式"的：当前在前台的应用必须主动 **让出** 前台，
@@ -29,6 +29,17 @@ enum OpenHelper {
         NSApp.yieldActivation(toApplicationWithBundleIdentifier: systemSettingsBundleID)
         NSWorkspace.shared.open(url, configuration: activatingConfiguration()) { _, error in
             if let error { print("打开系统设置失败：\(error)") }
+        }
+    }
+
+    /// 用默认浏览器打开网页
+    static func openWebPage(_ url: URL) {
+        if let browserURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+           let browserID = Bundle(url: browserURL)?.bundleIdentifier {
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: browserID)
+        }
+        NSWorkspace.shared.open(url, configuration: activatingConfiguration()) { _, error in
+            if let error { print("打开网页失败：\(error)") }
         }
     }
 
