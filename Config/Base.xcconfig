@@ -1,0 +1,18 @@
+// 代码签名的公共配置（会提交到仓库）
+//
+// 默认使用"临时签名"（Sign to Run Locally），任何人 clone 后都能直接编译运行。
+//
+// 推荐配置自己的开发者证书：这样重新编译后，辅助功能授权不会失效。
+// 做法：把同目录下的 Local.example.xcconfig 复制一份，改名为 Local.xcconfig，
+// 填上你自己的团队 ID。Local.xcconfig 已被 .gitignore 忽略，不会提交到仓库，
+// 所以你的团队 ID 不会出现在公开的代码里。
+//
+// 注意：不要在 Xcode 的 Signing & Capabilities 界面里直接选择 Team，
+// 那样 Xcode 会把团队 ID 写进项目文件（project.pbxproj），提交时就会被带上。
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+// 如果存在 Local.xcconfig，就用里面的设置覆盖上面的默认值（"?" 表示文件不存在也不报错）
+#include? "Local.xcconfig"

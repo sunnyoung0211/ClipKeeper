@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+<defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="18" height="18">
+<rect width="18" height="18" fill="white"/>
+<rect x="10.75" y="10.5" width="7" height="7.5" rx="1.9" fill="black"/>
+</mask></defs>
+<g mask="url(#cut)"><path d="M -3.6 -4.175 L -3.6 2.975 A 3.6 3.6 0 0 0 3.6 2.975 L 3.6 -4.175 A 2.4 2.4 0 0 0 -1.2 -4.175 L -1.2 2.975 A 1.2 1.2 0 0 0 1.2 2.975 L 1.2 -2.6" transform="translate(8.5 8.35) rotate(32) scale(1.2)" fill="none" stroke="black" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" /></g>
+<rect x="11.75" y="11.5" width="1.75" height="5.5" rx="0.875" fill="black"/>
+<rect x="15" y="11.5" width="1.75" height="5.5" rx="0.875" fill="black"/>
+</svg>

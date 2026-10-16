@@ -1,0 +1,16 @@
+.build/
+build/
+.DS_Store
+xcuserdata/
+
+# 设计方案：只提交正在使用的方案，未采用的方案只保留在本地
+# （换方案时，把下面 "!" 开头的那一行改成新方案的文件夹名）
+Design/glass-clip-icons/*
+!Design/glass-clip-icons/README.md
+!Design/glass-clip-icons/07b-glassclip-coral/
+Design/menubar-icons-paperclip/*
+!Design/menubar-icons-paperclip/README.md
+!Design/menubar-icons-paperclip/tilted/
+
+# 本机的签名配置（含开发团队 ID），不提交
+Config/Local.xcconfig

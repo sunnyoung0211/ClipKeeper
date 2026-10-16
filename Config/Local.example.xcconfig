@@ -1,0 +1,8 @@
+// 本地签名配置模板：复制本文件并改名为 Local.xcconfig，再填入你的团队 ID。
+//
+// 怎么查自己的团队 ID？在终端运行下面这条命令，输出里 OU= 后面那一串就是：
+//   security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+// （前提是已经在 Xcode → Settings → Accounts 里登录过 Apple ID）
+
+DEVELOPMENT_TEAM = 你的团队ID
+CODE_SIGN_IDENTITY = Apple Development
