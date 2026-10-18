@@ -6,15 +6,25 @@ import Observation
 @Observable
 final class PanelViewModel {
     var query = "" {
-        // 搜索词变了，就重新选中第一条结果
-        didSet { selectFirst() }
+        // 搜索词变了，就重新选中第一条结果（只是被重新赋了同样的值时不算）
+        didSet {
+            if query != oldValue { selectFirst() }
+        }
     }
-    var selectedID: UUID?
+    var selectedID: UUID? {
+        didSet {
+            if selectedID != oldValue { onSelectionChanged?() }
+        }
+    }
 
     @ObservationIgnored let store: ClipboardStore
     @ObservationIgnored let settings: AppSettings
     @ObservationIgnored var onSelect: ((ClipItem) -> Void)?
     @ObservationIgnored var onCopyOnly: ((ClipItem) -> Void)?
+    /// 选中了另一条（用来让预览窗口跟着切换）
+    @ObservationIgnored var onSelectionChanged: (() -> Void)?
+    /// 打开某条记录的预览（右键菜单里的"预览"）
+    @ObservationIgnored var onPreview: ((ClipItem) -> Void)?
 
     init(store: ClipboardStore, settings: AppSettings) {
         self.store = store
@@ -43,6 +53,22 @@ final class PanelViewModel {
         let currentIndex = list.firstIndex { $0.id == selectedID } ?? 0
         let newIndex = min(max(currentIndex + delta, 0), list.count - 1)
         selectedID = list[newIndex].id
+    }
+
+    /// 用鼠标点了某一条：没选中的先选中它，点的是已经选中的那条才粘贴。
+    /// 这样连点两下（双击）就是"选中并粘贴"
+    func click(_ item: ClipItem) {
+        if item.id == selectedID {
+            onSelect?(item)
+        } else {
+            selectedID = item.id
+        }
+    }
+
+    /// 选中某一条并打开它的预览
+    func preview(_ item: ClipItem) {
+        selectedID = item.id
+        onPreview?(item)
     }
 
     /// 确认选中项（回车）
@@ -75,7 +101,8 @@ final class PanelViewModel {
         selectedID = next?.id
     }
 
-    private var selectedItem: ClipItem? {
+    /// 当前选中的记录
+    var selectedItem: ClipItem? {
         results.first { $0.id == selectedID }
     }
 }

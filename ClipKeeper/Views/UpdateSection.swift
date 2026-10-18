@@ -3,11 +3,20 @@ import SwiftUI
 /// 设置窗口里的"更新"分组：显示当前版本、检查更新、下载并安装
 struct UpdateSection: View {
     let updater: UpdateService
+    @Bindable var settings: AppSettings
+
+    /// 设置窗口滚动到这里时用的标记
+    static let scrollID = "updates"
 
     var body: some View {
         Section {
             LabeledContent("当前版本", value: updater.currentVersion)
             statusRow
+            Toggle("每天自动检查更新", isOn: $settings.autoCheckForUpdates)
+                .onChange(of: settings.autoCheckForUpdates) { _, enabled in
+                    if enabled { updater.checkIfDue() }
+                }
+                .id(Self.scrollID)
         } header: {
             Text("更新")
         } footer: {
@@ -22,8 +31,10 @@ struct UpdateSection: View {
     private var statusRow: some View {
         switch updater.state {
         case .idle:
-            LabeledContent("检查新版本") {
+            LabeledContent {
                 Button("检查更新") { check() }
+            } label: {
+                checkLabel
             }
 
         case .checking:
@@ -35,12 +46,14 @@ struct UpdateSection: View {
             }
 
         case .upToDate:
-            LabeledContent("检查新版本") {
+            LabeledContent {
                 HStack(spacing: 10) {
                     Label("已是最新版本", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Button("再次检查") { check() }
                 }
+            } label: {
+                checkLabel
             }
 
         case .available(let release):
@@ -89,6 +102,15 @@ struct UpdateSection: View {
                     Button("重试") { updater.retry() }
                 }
             }
+        }
+    }
+
+    /// "检查新版本"，检查过的话下面再用小字显示上次检查的时间
+    @ViewBuilder
+    private var checkLabel: some View {
+        Text("检查新版本")
+        if let lastCheckDate = updater.lastCheckDate {
+            Text("上次检查：") + Text(lastCheckDate, format: .relative(presentation: .named))
         }
     }
 

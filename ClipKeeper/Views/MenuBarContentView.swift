@@ -10,6 +10,16 @@ struct MenuBarContentView: View {
     var body: some View {
         @Bindable var settings = app.settings
 
+        // 自动检查发现了新版本：放在最上面提醒一下，点了打开设置里的"更新"
+        if let release = app.updater.latestRelease {
+            Button {
+                app.showSettings(revealUpdates: true)
+            } label: {
+                Label("发现新版本 \(release.version)，点击更新…", systemImage: "arrow.down.circle")
+            }
+            Divider()
+        }
+
         Button("打开剪贴板历史    \(settings.hotkey.display)") {
             app.showPanel()
         }

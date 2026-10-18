@@ -9,8 +9,11 @@
 #
 # 说明：
 # - 编译出的是通用版本（同时支持 Apple 芯片和 Intel 芯片的 Mac）。
-# - 安装包里的应用会重新使用"临时签名"（ad-hoc）。开发时用的 Apple Development 证书里
-#   带有开发者的 Apple ID 邮箱，拿到安装包的人都能查看，所以对外分发时换成不含任何个人信息的临时签名。
+# - 安装包里的应用会重新签名。开发时用的 Apple Development 证书里带有开发者的 Apple ID 邮箱，
+#   拿到安装包的人都能查看，所以对外分发时换成不含任何个人信息的签名：
+#   · 运行过 ./scripts/setup-signing.sh 的话，用"固定签名"（自签名证书 ClipKeeper Code Signing）。
+#     每个版本的签名都一样，用户升级后辅助功能授权会保留；
+#   · 否则退回"临时签名"（ad-hoc），每个版本都不一样，用户升级后需要重新授权。
 # - 安装包没有经过 Apple 公证，别人第一次打开时需要在「系统设置 → 隐私与安全性」里
 #   点「仍要打开」（DMG 里附带了说明）。
 set -euo pipefail
@@ -18,6 +21,8 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="ClipKeeper"
 DERIVED="build/DerivedData"
+# 固定签名的证书（由 setup-signing.sh 生成，放在登录钥匙串里）
+SIGNING_NAME="ClipKeeper Code Signing"
 
 # 从 Xcode 项目里读取版本号（MARKETING_VERSION）
 VERSION=$(xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
@@ -35,20 +40,31 @@ STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT   # 脚本结束时自动删除临时文件夹
 cp -R "$APP" "$STAGING/"
 
-echo "▶ 改用临时签名（不包含开发者的个人信息）…"
-# 注意：必须先把原来的签名彻底删掉，再签临时签名。
+echo "▶ 重新签名（不包含开发者的个人信息）…"
+# 注意：必须先把原来的签名彻底删掉，再签新的签名。
 # 如果直接用 --force 覆盖，新签名会沿用旧签名占的空间，旧证书的内容（包括邮箱）会残留在可执行文件里。
 codesign --remove-signature "$STAGING/$APP_NAME.app/Contents/MacOS/$APP_NAME"
 codesign --remove-signature "$STAGING/$APP_NAME.app"
 # 去掉调试符号：编译时会把每个中间文件的完整路径（例如 /Users/你的用户名/...）记在可执行文件里，
 # 这些信息对用户没用，还会暴露你的用户名
 strip -S -x "$STAGING/$APP_NAME.app/Contents/MacOS/$APP_NAME"
-codesign --sign - "$STAGING/$APP_NAME.app"
-codesign --verify --strict "$STAGING/$APP_NAME.app"
+# 注意不能加 -v：-v 只列出"受信任"的证书，自签名证书本来就不受信任，但照样能签名
+if grep -q "\"$SIGNING_NAME\"" <<< "$(security find-identity -p codesigning)"; then
+  echo "  使用固定签名：$SIGNING_NAME"
+  codesign --sign "$SIGNING_NAME" --timestamp=none "$STAGING/$APP_NAME.app"
+else
+  echo "  ⚠️  没有找到固定签名，改用临时签名：用户升级到这个版本后需要重新授权辅助功能。"
+  echo "     运行 ./scripts/setup-signing.sh 可以设置固定签名。"
+  codesign --sign - "$STAGING/$APP_NAME.app"
+fi
+codesign --verify --deep --strict "$STAGING/$APP_NAME.app"
 
 echo "▶ 检查应用里是否还有个人信息…"
-# 签名里不能有开发者证书和团队信息；整个应用里不能出现证书名、你的用户名或本机路径
-if codesign -dvv "$STAGING/$APP_NAME.app" 2>&1 | grep -qE "^(Authority|TeamIdentifier=[^n])" \
+# 签名里只能出现我们自己的自签名证书，不能有开发者证书和团队信息；
+# 整个应用里不能出现证书名、你的用户名或本机路径
+SIGNATURE_INFO=$(codesign -dvv "$STAGING/$APP_NAME.app" 2>&1)
+if grep "^Authority=" <<< "$SIGNATURE_INFO" | grep -vx "Authority=$SIGNING_NAME" >/dev/null \
+   || grep -qE "^TeamIdentifier=[^n]" <<< "$SIGNATURE_INFO" \
    || grep -rqa -e "Apple Development" -e "$(whoami)" -e "/Users/" "$STAGING/$APP_NAME.app"; then
   echo "❌ 应用里仍然带有个人信息，已停止打包。可以用下面的命令查看是哪个文件："
   echo "   grep -rla -e \"Apple Development\" -e \"$(whoami)\" -e \"/Users/\" \"$STAGING/$APP_NAME.app\""
@@ -78,8 +94,8 @@ ClipKeeper 安装说明
 
 4. 第一次使用"自动粘贴"时，请按提示在
    「系统设置 → 隐私与安全性 → 辅助功能」里打开 ClipKeeper。
-   以后升级到新版本时，如果自动粘贴不起作用了，请在辅助功能列表里选中 ClipKeeper，
-   点「−」删掉，再重新打开 ClipKeeper 授权一次。
+   从 v0.1.3 开始，升级到新版本后授权会保留。从更早的版本升级到 v0.1.3 时，如果自动粘贴
+   不起作用了，请在辅助功能列表里选中 ClipKeeper，点「−」删掉，再重新打开 ClipKeeper 授权一次。
 
 5. 以后有新版本时，在「设置 → 更新」里点「检查更新」，再点「下载并安装」即可，
    不用再手动下载安装包。
@@ -96,3 +112,5 @@ hdiutil verify "$DMG" -quiet
 
 echo "✅ 已生成 $DMG（$(du -h "$DMG" | cut -f1 | xargs)）"
 echo "   SHA-256: $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+# "签名要求"：系统靠它判断是不是同一个应用。用固定签名时，每个版本打出来的这一行应该完全一样
+echo "   签名要求: $(codesign -d -r- "$STAGING/$APP_NAME.app" 2>&1 | sed -n 's/^designated => //p')"

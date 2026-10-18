@@ -6,6 +6,9 @@ import SwiftUI
 /// 无边框窗口默认不能成为"键盘焦点窗口"，重写这个属性后才能在搜索框里打字。
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// 没有任何控件处理的按键最后会送到窗口这里，默认会"嘟"一声，安静地忽略掉就好
+    override func keyDown(with event: NSEvent) {}
 }
 
 /// 负责显示 / 隐藏浮动的历史面板、决定它的位置和大小，并处理键盘操作。
@@ -34,11 +37,17 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var panel: FloatingPanel?
     private var container: PanelContainerView?
     private var keyMonitor: Any?
+    /// 按空格时在旁边显示完整内容的预览窗口
+    private let preview: PreviewPanelController
 
     init(store: ClipboardStore, settings: AppSettings) {
         self.settings = settings
         viewModel = PanelViewModel(store: store, settings: settings)
+        preview = PreviewPanelController(store: store)
         super.init()
+        // 预览打开时，选中项变了就跟着换成新的那一条
+        viewModel.onSelectionChanged = { [weak self] in self?.updatePreview() }
+        viewModel.onPreview = { [weak self] _ in self?.showPreview() }
     }
 
     var isVisible: Bool {
@@ -52,22 +61,60 @@ final class PanelController: NSObject, NSWindowDelegate {
     func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        preview.hide()
 
         viewModel.reset()
-        // 每次打开都换上一个新的界面，这样搜索框会被清空并重新获得焦点
+        // 每次打开都换上一个新的界面，这样搜索框会被清空
         let hostingView = NSHostingView(rootView: HistoryPanelView(model: viewModel))
         hostingView.sizingOptions = []   // 窗口大小由我们自己控制，不让 SwiftUI 去改
         container?.setContent(hostingView)
 
         panel.setFrame(initialFrame(), display: false)
         panel.makeKeyAndOrderFront(nil)
+        // 不让搜索框自动获得焦点（窗口自己当"焦点"）：用户点了搜索框才在里面输入，
+        // 直接打字、按 ⌘V 等会关掉面板，交还给原来的应用（见 passToPreviousApp）
+        panel.makeFirstResponder(nil)
         installKeyMonitor()
     }
 
     func hide() {
+        preview.hide()
         guard let panel, panel.isVisible else { return }
         panel.orderOut(nil)
         removeKeyMonitor()
+    }
+
+    // MARK: - 预览
+
+    /// 打开 / 关闭选中记录的预览
+    func togglePreview() {
+        preview.isVisible ? preview.hide() : showPreview()
+    }
+
+    func showPreview() {
+        guard let item = viewModel.selectedItem, let anchor = glassScreenFrame else { return }
+        preview.show(item, nextTo: anchor)
+    }
+
+    /// 预览窗口在屏幕上的位置（演示模式截图时用）
+    var previewFrame: NSRect? {
+        preview.frame
+    }
+
+    /// 选中项变了：预览开着的话换成新的那一条；没有选中项了就关掉
+    private func updatePreview() {
+        guard preview.isVisible else { return }
+        if viewModel.selectedItem != nil {
+            showPreview()
+        } else {
+            preview.hide()
+        }
+    }
+
+    /// 玻璃面板在屏幕上的位置
+    private var glassScreenFrame: NSRect? {
+        guard let panel, let container else { return nil }
+        return panel.convertToScreen(container.convert(container.glassFrame, to: nil))
     }
 
     /// 把面板恢复成默认大小，并忘掉上次的位置（设置里的"重置"按钮会调用）
@@ -89,6 +136,19 @@ final class PanelController: NSObject, NSWindowDelegate {
         let m = PanelContainerView.shadowMargins
         let glassOrigin = NSPoint(x: panel.frame.minX + m.left, y: panel.frame.minY + m.bottom)
         defaults.set(NSStringFromPoint(glassOrigin), forKey: Keys.origin)
+        repositionPreview()
+    }
+
+    /// 拖动边缘改变大小时，预览窗口跟着移动
+    func windowDidResize(_ notification: Notification) {
+        repositionPreview()
+    }
+
+    /// 让预览窗口重新贴到面板旁边
+    func repositionPreview() {
+        if let anchor = glassScreenFrame {
+            preview.reposition(nextTo: anchor)
+        }
     }
 
     // MARK: - 创建窗口
@@ -212,6 +272,12 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// 用户是不是点过搜索框、正在输入搜索词。
+    /// 正在编辑的文本框，键盘焦点其实在系统给它配的"字段编辑器"上
+    private var isSearchFocused: Bool {
+        (panel?.firstResponder as? NSTextView)?.isFieldEditor == true
+    }
+
     private func handleKey(_ event: NSEvent) -> Bool {
         // 正在用中文输入法打拼音时（有"未确认的文字"），方向键和回车要留给输入法
         if let textView = panel?.firstResponder as? NSTextView, textView.hasMarkedText() {
@@ -229,16 +295,36 @@ final class PanelController: NSObject, NSWindowDelegate {
             viewModel.confirmSelection()
             return true
         case kVK_Escape:
-            hide()
+            // 预览开着时先关预览，再按一次才关面板
+            preview.isVisible ? preview.hide() : hide()
             return true
         default:
             break
         }
 
-        // 只按住了 ⌘ 的组合键
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags == .command else { return false }
+        // 搜索框是空的时候，按空格打开 / 关闭预览（有搜索词时空格要留给打字用）
+        if Int(event.keyCode) == kVK_Space && flags.isEmpty && viewModel.query.isEmpty {
+            togglePreview()
+            return true
+        }
 
+        // 只按住了 ⌘ 的组合键：面板自己的快捷键
+        if flags == .command && handleCommandKey(event) {
+            return true
+        }
+
+        // 其他按键（打字、⌘V 等）：用户点过搜索框的话，照常交给搜索框；
+        // 没点过的话，说明用户其实是想在原来的应用里继续操作——关掉面板，把这个按键原样交还给它
+        if !isSearchFocused {
+            passToPreviousApp(event)
+            return true
+        }
+        return false
+    }
+
+    /// 面板自己的 ⌘ 快捷键。处理了返回 true
+    private func handleCommandKey(_ event: NSEvent) -> Bool {
         if Int(event.keyCode) == kVK_Delete {          // ⌘⌫ 删除
             viewModel.deleteSelected()
             return true
@@ -248,10 +334,28 @@ final class PanelController: NSObject, NSWindowDelegate {
             viewModel.togglePinSelected()
             return true
         }
+        if key == "y" {                                 // ⌘Y 预览（和访达的"快速查看"一样）
+            togglePreview()
+            return true
+        }
         if let number = Int(key), (1...9).contains(number) {   // ⌘1 ~ ⌘9 快速粘贴
             viewModel.quickSelect(index: number - 1)
             return true
         }
         return false
+    }
+
+    /// 关掉面板，把按键原样发给原来在用的应用。
+    ///
+    /// 面板不会抢走那个应用的"前台"状态（见类的说明），所以 frontmostApplication 就是它。
+    /// 按键直接投递给它的进程（postToPid），不用等窗口焦点切换回去，后面紧接着打的字顺序也不会乱。
+    /// 和自动粘贴一样需要辅助功能权限：没有权限时这一个按键会丢掉，但面板照样会关闭。
+    private func passToPreviousApp(_ event: NSEvent) {
+        let target = NSWorkspace.shared.frontmostApplication
+        hide()
+        guard !AppModel.isDemoMode,                       // 演示模式不往别的应用发按键
+              let target, target != NSRunningApplication.current,
+              let keyEvent = event.cgEvent?.copy() else { return }
+        keyEvent.postToPid(target.processIdentifier)
     }
 }

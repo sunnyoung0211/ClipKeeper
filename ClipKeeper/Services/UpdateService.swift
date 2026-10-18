@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Security
 
 /// 检查更新、下载并安装新版本。
 ///
@@ -7,7 +8,8 @@ import CryptoKit
 /// 版本号比当前的新，就提示用户。用户点"下载并安装"后：
 /// 1. 下载 DMG 安装包，并核对文件的 SHA-256 校验值，确保下载完整、没被篡改
 /// 2. 在后台挂载 DMG，把里面的 ClipKeeper.app 复制出来，然后卸载 DMG
-/// 3. 检查复制出来的应用：Bundle ID 必须和当前一致、版本号要对得上、代码签名完好
+/// 3. 检查复制出来的应用：Bundle ID 必须和当前一致、版本号要对得上、代码签名完好；
+///    如果当前版本用的是"固定签名"，新版本也必须是同一张证书签的
 /// 4. 用新应用替换掉正在运行的这个（运行中的程序已经加载进内存，替换磁盘上的文件不影响它）
 /// 5. 打开新版本；新版本启动时会让旧版本退出（见 AppDelegate.terminateOtherInstances）
 ///
@@ -42,8 +44,18 @@ final class UpdateService {
     private(set) var state: State = .idle
     /// 最近一次查到的新版本（安装失败后可以重试，也可以打开它的发布页面）
     private(set) var latestRelease: Release?
+    /// 上次成功检查更新的时间
+    private(set) var lastCheckDate = UserDefaults.standard.object(forKey: lastCheckKey) as? Date
+    /// 设置窗口打开时，要不要自动滚动到"更新"分组（点了菜单里的"发现新版本"时）
+    var wantsReveal = false
+
+    /// 自动检查的间隔：一天
+    static let automaticCheckInterval: TimeInterval = 24 * 60 * 60
+    private static let lastCheckKey = "lastUpdateCheck"
 
     @ObservationIgnored private var installTask: Task<Void, Never>?
+    @ObservationIgnored private var automaticCheckTimer: Timer?
+    @ObservationIgnored private var isAutomaticCheckEnabled: () -> Bool = { false }
 
     /// 当前运行的版本号
     var currentVersion: String {
@@ -64,12 +76,21 @@ final class UpdateService {
 
     // MARK: - 检查更新
 
-    func checkForUpdates() async {
+    /// 检查更新。
+    /// - Parameter userInitiated: 是不是用户点了"检查更新"。后台自动检查失败时（比如没联网）不显示错误，
+    ///   保持原来的状态，过一会儿再试
+    func checkForUpdates(userInitiated: Bool = true) async {
         guard !isBusy else { return }
+        let previousState = state
+        let previousRelease = latestRelease
         state = .checking
         latestRelease = nil
         do {
             let release = try await fetchLatestRelease()
+            lastCheckDate = .now
+            if !AppModel.isDemoMode {   // 演示模式不改动真实的设置
+                UserDefaults.standard.set(lastCheckDate, forKey: Self.lastCheckKey)
+            }
             if Self.isVersion(release.version, newerThan: currentVersion) {
                 latestRelease = release
                 state = .available(release)
@@ -77,8 +98,36 @@ final class UpdateService {
                 state = .upToDate
             }
         } catch {
-            state = .failed(Self.describe(error, while: "检查更新"))
+            if userInitiated {
+                state = .failed(Self.describe(error, while: "检查更新"))
+            } else {
+                state = previousState
+                latestRelease = previousRelease
+            }
         }
+    }
+
+    // MARK: - 自动检查
+
+    /// 开始定时自动检查：启动 1 分钟后看一次，之后每小时看一次，距离上次检查满一天就在后台检查。
+    /// - Parameter isEnabled: 当前是否开启了自动检查（读取设置）
+    func startAutomaticChecks(isEnabled: @escaping () -> Bool) {
+        isAutomaticCheckEnabled = isEnabled
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.checkIfDue()
+        }
+        let timer = Timer(timeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkIfDue() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        automaticCheckTimer = timer
+    }
+
+    /// 开启了自动检查、并且距离上次检查已经满一天时，在后台检查一次
+    func checkIfDue() {
+        guard isAutomaticCheckEnabled(), !isBusy else { return }
+        if let lastCheckDate, Date.now.timeIntervalSince(lastCheckDate) < Self.automaticCheckInterval { return }
+        Task { await checkForUpdates(userInitiated: false) }
     }
 
     /// 向 GitHub 查询最新的正式版本（不包括草稿和预览版）
@@ -164,9 +213,10 @@ final class UpdateService {
             // 解压、检查这些步骤要运行命令行工具、读写文件，放到后台线程去做
             state = .installing
             let bundleID = Bundle.main.bundleIdentifier ?? ""
+            let requiredSignature = Self.pinnedSignatureRequirement()
             let newApp = try await Task.detached(priority: .userInitiated) {
-                try prepareNewApp(from: dmg, expectedSHA256: release.dmgSHA256,
-                                  expectedVersion: release.version, bundleID: bundleID, replacing: appURL)
+                try prepareNewApp(from: dmg, expectedSHA256: release.dmgSHA256, expectedVersion: release.version,
+                                  bundleID: bundleID, requiredSignature: requiredSignature, replacing: appURL)
             }.value
 
             // 替换：把新版本"换"到当前应用的位置上
@@ -227,6 +277,22 @@ final class UpdateService {
         return nil
     }
 
+    /// 当前应用用的是"固定签名"（自签名证书）时，返回它的"签名要求"，新版本必须满足同样的要求。
+    /// 用临时签名或开发证书签名时返回 nil：这两种情况下新版本的签名本来就会不一样，没法做这个检查。
+    private static func pinnedSignatureRequirement() -> String? {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var requirement: SecRequirement?
+        var text: CFString?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess, let requirement,
+              SecRequirementCopyString(requirement, [], &text) == errSecSuccess, let text else { return nil }
+        // 自签名证书的签名要求是"认准这一张证书"，形如：identifier "…" and certificate leaf = H"证书指纹"
+        let string = text as String
+        return string.contains("certificate leaf = H\"") ? string : nil
+    }
+
     /// 把错误转成用户看得懂的说明
     private static func describe(_ error: Error, while action: String) -> String {
         if let error = error as? UpdateError { return error.message }
@@ -251,6 +317,7 @@ nonisolated private enum UpdateError: Error {
     case rateLimited
     case badResponse
     case checksumMismatch
+    case signatureMismatch
     case invalidPackage(String)
     case commandFailed(String)
 
@@ -260,6 +327,7 @@ nonisolated private enum UpdateError: Error {
         case .rateLimited:             return "检查得太频繁了，GitHub 暂时拒绝了请求，请过一会儿再试"
         case .badResponse:             return "GitHub 返回的数据不对，请稍后重试"
         case .checksumMismatch:        return "下载的安装包不完整或已被篡改（校验值不一致），请重试"
+        case .signatureMismatch:       return "新版本的签名和当前版本不一致，为了安全没有安装。请前往发布页面确认后手动下载"
         case .invalidPackage(let why): return "安装包有问题：\(why)"
         case .commandFailed(let tool): return "安装时运行 \(tool) 失败，请重试，或前往发布页面手动下载"
         }
@@ -317,7 +385,8 @@ nonisolated private final class DownloadTracker: NSObject, URLSessionTaskDelegat
 
 /// 从下载好的 DMG 里取出新版本的应用，检查无误后返回它的位置
 nonisolated private func prepareNewApp(from dmg: URL, expectedSHA256: String?, expectedVersion: String,
-                                       bundleID: String, replacing target: URL) throws -> URL {
+                                       bundleID: String, requiredSignature: String?,
+                                       replacing target: URL) throws -> URL {
     let fileManager = FileManager.default
 
     // 1. 核对校验值
@@ -354,6 +423,14 @@ nonisolated private func prepareNewApp(from dmg: URL, expectedSHA256: String?, e
         throw UpdateError.invalidPackage("版本号和发布的版本不一致")
     }
     try runTool("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
+    if let requiredSignature {
+        // -R：除了签名完好，还要满足当前版本的签名要求（也就是同一张证书签的）
+        do {
+            try runTool("/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R", "=" + requiredSignature, newApp.path])
+        } catch {
+            throw UpdateError.signatureMismatch
+        }
+    }
 
     // 5. 保险起见去掉"隔离"标记，免得打开时又被系统拦下
     try? runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp.path])

@@ -16,6 +16,12 @@ final class ClipboardStore {
     @ObservationIgnored private var context: ModelContext { container.mainContext }
     /// 预览图缓存，避免每次刷新界面都重新解码图片
     @ObservationIgnored private let thumbnailCache = NSCache<NSString, NSImage>()
+    /// 大预览图（按空格时显示）的缓存。大图比较占内存，只留最近几张
+    @ObservationIgnored private let largeImageCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 6
+        return cache
+    }()
 
     /// 数据保存的文件夹：~/Library/Application Support/ClipKeeper
     static var dataFolderURL: URL {
@@ -60,6 +66,7 @@ final class ClipboardStore {
 
     func delete(_ item: ClipItem) {
         thumbnailCache.removeObject(forKey: item.id.uuidString as NSString)
+        largeImageCache.removeObject(forKey: item.id.uuidString as NSString)
         context.delete(item)
         saveAndReload()
     }
@@ -68,6 +75,7 @@ final class ClipboardStore {
     func clearUnpinned() {
         try? context.delete(model: ClipItem.self, where: #Predicate { !$0.isPinned })
         thumbnailCache.removeAllObjects()
+        largeImageCache.removeAllObjects()
         saveAndReload()
     }
 
@@ -75,6 +83,7 @@ final class ClipboardStore {
     func clearAll() {
         try? context.delete(model: ClipItem.self)
         thumbnailCache.removeAllObjects()
+        largeImageCache.removeAllObjects()
         saveAndReload()
     }
 
@@ -104,7 +113,22 @@ final class ClipboardStore {
     /// 生成预览图：把图片缩小后再显示，省内存，滚动列表也更流畅。
     /// 解码图片比较耗时（尤其是几千像素的截图），所以放到后台线程去做，不会卡住界面。
     func loadThumbnail(for item: ClipItem) async -> NSImage? {
-        if let cached = cachedThumbnail(for: item) { return cached }
+        await loadImage(for: item, maxPixelSize: 256, cache: thumbnailCache)
+    }
+
+    /// 已经生成好的大预览图（还没生成时返回 nil）
+    func cachedLargeImage(for item: ClipItem) -> NSImage? {
+        largeImageCache.object(forKey: item.id.uuidString as NSString)
+    }
+
+    /// 生成按空格预览时显示的大图（最长边 1600 像素，在 Retina 屏上也足够清晰）
+    func loadLargeImage(for item: ClipItem) async -> NSImage? {
+        await loadImage(for: item, maxPixelSize: 1600, cache: largeImageCache)
+    }
+
+    private func loadImage(for item: ClipItem, maxPixelSize: Int, cache: NSCache<NSString, NSImage>) async -> NSImage? {
+        let key = item.id.uuidString as NSString
+        if let cached = cache.object(forKey: key) { return cached }
 
         let source: ThumbnailSource
         if item.kind == .image, let data = item.imageData {
@@ -114,14 +138,13 @@ final class ClipboardStore {
         } else {
             return nil
         }
-        let key = item.id.uuidString as NSString
         let cgImage = await Task.detached(priority: .userInitiated) {
-            makeThumbnail(from: source)
+            makeThumbnail(from: source, maxPixelSize: maxPixelSize)
         }.value
         guard let cgImage else { return nil }
 
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        thumbnailCache.setObject(image, forKey: key)
+        cache.setObject(image, forKey: key)
         return image
     }
 
@@ -190,7 +213,7 @@ nonisolated private enum ThumbnailSource: Sendable {
 }
 
 /// 用 ImageIO 直接解码出缩小的图片，比先完整解码再缩小快得多、也省内存
-nonisolated private func makeThumbnail(from source: ThumbnailSource) -> CGImage? {
+nonisolated private func makeThumbnail(from source: ThumbnailSource, maxPixelSize: Int) -> CGImage? {
     let imageSource: CGImageSource?
     switch source {
     case .data(let data): imageSource = CGImageSourceCreateWithData(data as CFData, nil)
@@ -200,7 +223,7 @@ nonisolated private func makeThumbnail(from source: ThumbnailSource) -> CGImage?
     let options: [CFString: Any] = [
         kCGImageSourceCreateThumbnailFromImageAlways: true,
         kCGImageSourceCreateThumbnailWithTransform: true,   // 按照片里记录的方向摆正
-        kCGImageSourceThumbnailMaxPixelSize: 256,            // 列表里的预览图不大，256 像素足够清晰
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,   // 最长边缩小到多少像素
         kCGImageSourceShouldCacheImmediately: true,
     ]
     return CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary)

@@ -51,6 +51,11 @@ final class AppSettings {
         didSet { defaults.set(panelPlacement.rawValue, forKey: Keys.panelPlacement) }
     }
 
+    /// 是否每天自动检查一次更新
+    var autoCheckForUpdates: Bool {
+        didSet { defaults.set(autoCheckForUpdates, forKey: Keys.autoCheckForUpdates) }
+    }
+
     /// 不记录这些应用里复制的内容（保存的是应用的 Bundle ID，比如 "com.apple.Safari"）
     var ignoredBundleIDs: [String] {
         didSet { defaults.set(ignoredBundleIDs, forKey: Keys.ignoredBundleIDs) }
@@ -63,6 +68,7 @@ final class AppSettings {
             Keys.autoPaste: true,
             Keys.isPaused: false,
             Keys.panelPlacement: PanelPlacement.nearMouse.rawValue,
+            Keys.autoCheckForUpdates: true,
             // 默认忽略"钥匙串访问"和"密码"应用
             Keys.ignoredBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
         ])
@@ -71,6 +77,7 @@ final class AppSettings {
         isPaused = defaults.bool(forKey: Keys.isPaused)
         hotkey = Self.loadHotkey(from: defaults)
         panelPlacement = PanelPlacement(rawValue: defaults.string(forKey: Keys.panelPlacement) ?? "") ?? .nearMouse
+        autoCheckForUpdates = defaults.bool(forKey: Keys.autoCheckForUpdates)
         ignoredBundleIDs = defaults.stringArray(forKey: Keys.ignoredBundleIDs) ?? []
     }
 
@@ -94,5 +101,6 @@ final class AppSettings {
         static let hotkey = "hotkey"
         static let ignoredBundleIDs = "ignoredBundleIDs"
         static let panelPlacement = "panelPlacement"
+        static let autoCheckForUpdates = "autoCheckForUpdates"
     }
 }

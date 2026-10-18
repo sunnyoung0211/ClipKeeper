@@ -23,6 +23,12 @@ final class PanelContainerView: NSView {
     /// 玻璃四周留给阴影的透明边距（阴影向下偏，所以下边留得多一些）
     static let shadowMargins = NSEdgeInsets(top: 24, left: 32, bottom: 44, right: 32)
 
+    /// 这个外壳实际使用的边距。默认就是 shadowMargins；预览窗口贴着历史面板的那一侧会留得窄一些
+    var margins = PanelContainerView.shadowMargins {
+        didSet { setFrameSize(frame.size) }
+    }
+    /// 能不能拖动边缘调整大小（预览窗口不能）
+    var isResizable = true
     var minSize = NSSize(width: 300, height: 260)
     var maxSize = NSSize(width: 640, height: 820)
     /// 拖动调整大小结束时调用（用来保存新尺寸）
@@ -67,7 +73,7 @@ final class PanelContainerView: NSView {
 
     /// 玻璃在这个视图里的位置 = 整个区域去掉四周的阴影边距
     var glassFrame: NSRect {
-        let m = Self.shadowMargins
+        let m = margins
         return NSRect(
             x: m.left, y: m.bottom,
             width: max(bounds.width - m.left - m.right, 0),
@@ -139,6 +145,7 @@ final class PanelContainerView: NSView {
 
     /// 计算某个点落在玻璃的哪些边上。注意：AppKit 视图坐标的原点在左下角，y 向上。
     private func edges(at point: NSPoint) -> Edges {
+        guard isResizable else { return [] }
         let g = glassFrame
         let t = edgeThickness, c = cornerSize
         // 先排除离玻璃太远的点
@@ -191,7 +198,7 @@ final class PanelContainerView: NSView {
         let dy = mouse.y - dragStartMouse.y
 
         // 尺寸限制针对的是玻璃，窗口还要再加上四周的阴影边距
-        let m = Self.shadowMargins
+        let m = margins
         let extraWidth = m.left + m.right
         let extraHeight = m.top + m.bottom
         let minWidth = minSize.width + extraWidth, maxWidth = maxSize.width + extraWidth

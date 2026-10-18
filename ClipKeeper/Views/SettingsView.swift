@@ -31,110 +31,121 @@ struct SettingsView: View {
         // @Bindable 让我们可以用 $settings.xxx 把设置项绑定到开关、选择器上
         @Bindable var settings = app.settings
 
-        Form {
-            Section("通用") {
-                Toggle("开机时自动启动", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, enabled in
-                        setLaunchAtLogin(enabled)
+        // ScrollViewReader 用来在需要时滚动到"更新"分组
+        ScrollViewReader { proxy in
+            Form {
+                Section("通用") {
+                    Toggle("开机时自动启动", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, enabled in
+                            setLaunchAtLogin(enabled)
+                        }
+                    LabeledContent("呼出快捷键") {
+                        HotkeyRecorderView(app: app)
                     }
-                LabeledContent("呼出快捷键") {
-                    HotkeyRecorderView(app: app)
-                }
-                Picker("最多保存", selection: $settings.maxHistory) {
-                    ForEach(historyLimits, id: \.self) { limit in
-                        Text("\(limit) 条").tag(limit)
-                    }
-                }
-                .onChange(of: settings.maxHistory) {
-                    app.store.applyHistoryLimit()
-                }
-                Toggle("暂停记录", isOn: $settings.isPaused)
-            }
-
-            Section {
-                Picker("面板出现在", selection: $settings.panelPlacement) {
-                    ForEach(PanelPlacement.allCases) { placement in
-                        Text(placement.display).tag(placement)
-                    }
-                }
-                LabeledContent("面板大小和位置") {
-                    Button("恢复默认") {
-                        app.panelController.resetSizeAndPosition()
-                    }
-                }
-            } header: {
-                Text("面板")
-            } footer: {
-                Text("拖动面板的顶部或底部空白处可以移动它，拖动边缘或四个角可以调整大小。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("选中后自动粘贴到当前应用", isOn: $settings.autoPaste)
-                LabeledContent("辅助功能权限") {
-                    if isTrusted {
-                        Label("已授权", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("去授权…") {
-                            PasteService.requestAccessibility()
-                            PasteService.openAccessibilitySettings()
+                    Picker("最多保存", selection: $settings.maxHistory) {
+                        ForEach(historyLimits, id: \.self) { limit in
+                            Text("\(limit) 条").tag(limit)
                         }
                     }
-                }
-            } header: {
-                Text("粘贴")
-            } footer: {
-                Text("自动粘贴需要模拟按下 ⌘V，所以要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 ClipKeeper。未授权时，选中的内容只会被复制到剪贴板。\n\n如果开关已打开但这里仍显示未授权：请在列表中选中 ClipKeeper 点「−」删除，重新打开 ClipKeeper 后再授权一次。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                ForEach(settings.ignoredBundleIDs, id: \.self) { bundleID in
-                    HStack {
-                        appIcon(for: bundleID)
-                        Text(appName(for: bundleID))
-                        Spacer()
-                        Button {
-                            settings.ignoredBundleIDs.removeAll { $0 == bundleID }
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.borderless)
+                    .onChange(of: settings.maxHistory) {
+                        app.store.applyHistoryLimit()
                     }
+                    Toggle("暂停记录", isOn: $settings.isPaused)
                 }
-                Menu("添加正在运行的应用…") {
-                    ForEach(addableApps(), id: \.processIdentifier) { runningApp in
-                        Button(runningApp.localizedName ?? runningApp.bundleIdentifier ?? "未知应用") {
-                            if let id = runningApp.bundleIdentifier {
-                                settings.ignoredBundleIDs.append(id)
+
+                Section {
+                    Picker("面板出现在", selection: $settings.panelPlacement) {
+                        ForEach(PanelPlacement.allCases) { placement in
+                            Text(placement.display).tag(placement)
+                        }
+                    }
+                    LabeledContent("面板大小和位置") {
+                        Button("恢复默认") {
+                            app.panelController.resetSizeAndPosition()
+                        }
+                    }
+                } header: {
+                    Text("面板")
+                } footer: {
+                    Text("拖动面板的顶部或底部空白处可以移动它，拖动边缘或四个角可以调整大小。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Toggle("选中后自动粘贴到当前应用", isOn: $settings.autoPaste)
+                    LabeledContent("辅助功能权限") {
+                        if isTrusted {
+                            Label("已授权", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("去授权…") {
+                                PasteService.requestAccessibility()
+                                PasteService.openAccessibilitySettings()
                             }
                         }
                     }
+                } header: {
+                    Text("粘贴")
+                } footer: {
+                    Text("自动粘贴需要模拟按下 ⌘V，所以要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 ClipKeeper。未授权时，选中的内容只会被复制到剪贴板。\n\n如果开关已打开但这里仍显示未授权：请在列表中选中 ClipKeeper 点「−」删除，重新打开 ClipKeeper 后再授权一次。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-            } header: {
-                Text("隐私：不记录以下应用中复制的内容")
-            } footer: {
-                Text("1Password 等密码管理器复制的密码会被自动忽略。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            Section("数据") {
-                LabeledContent("已保存", value: "\(app.store.items.count) 条")
-                Button("在访达中打开数据文件夹") {
-                    OpenHelper.openInFinder(ClipboardStore.dataFolderURL)
+                Section {
+                    ForEach(settings.ignoredBundleIDs, id: \.self) { bundleID in
+                        HStack {
+                            appIcon(for: bundleID)
+                            Text(appName(for: bundleID))
+                            Spacer()
+                            Button {
+                                settings.ignoredBundleIDs.removeAll { $0 == bundleID }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    Menu("添加正在运行的应用…") {
+                        ForEach(addableApps(), id: \.processIdentifier) { runningApp in
+                            Button(runningApp.localizedName ?? runningApp.bundleIdentifier ?? "未知应用") {
+                                if let id = runningApp.bundleIdentifier {
+                                    settings.ignoredBundleIDs.append(id)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("隐私：不记录以下应用中复制的内容")
+                } footer: {
+                    Text("1Password 等密码管理器复制的密码会被自动忽略。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Button("清空全部历史…", role: .destructive) {
-                    showClearConfirm = true
+
+                Section("数据") {
+                    LabeledContent("已保存", value: "\(app.store.items.count) 条")
+                    Button("在访达中打开数据文件夹") {
+                        OpenHelper.openInFinder(ClipboardStore.dataFolderURL)
+                    }
+                    Button("清空全部历史…", role: .destructive) {
+                        showClearConfirm = true
+                    }
+                }
+
+                UpdateSection(updater: app.updater, settings: settings)
+            }
+            .formStyle(.grouped)
+            .onChange(of: app.updater.wantsReveal, initial: true) { _, wantsReveal in
+                guard wantsReveal else { return }
+                app.updater.wantsReveal = false
+                // 等窗口和列表布局好再滚动
+                DispatchQueue.main.async {
+                    withAnimation { proxy.scrollTo(UpdateSection.scrollID, anchor: .bottom) }
                 }
             }
-
-            UpdateSection(updater: app.updater)
         }
-        .formStyle(.grouped)
         .frame(width: 480, height: Self.windowHeight)
         .onReceive(timer) { _ in
             isTrusted = PasteService.isAccessibilityTrusted

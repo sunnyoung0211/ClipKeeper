@@ -60,8 +60,6 @@ struct ClipRowView: View {
         .padding(.vertical, 5)
         .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { isHovered = $0 }
-        // 鼠标悬停时显示完整文字（最多 1000 字）
-        .help(item.kind == .text ? String((item.text ?? "").prefix(1000)) : item.title)
         .task(id: item.id) {
             guard item.hasImagePreview, preview == nil else { return }
             preview = await store.loadThumbnail(for: item)

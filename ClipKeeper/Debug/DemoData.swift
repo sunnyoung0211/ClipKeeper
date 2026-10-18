@@ -9,8 +9,10 @@ import AppKit
 /// 用法：在启动参数里加上 `-DemoMode YES`，再按需加上：
 /// - `-DemoOpen panel`      启动后打开浮动面板
 /// - `-DemoOpen settings`   启动后打开设置窗口
+/// - `-DemoOpen updates`    启动后打开设置窗口，并滚动到"更新"分组
 /// - `-DemoOpen menu`       启动后打开菜单栏菜单
 /// - `-DemoQuery 关键字`     打开面板后自动输入搜索词
+/// - `-DemoPreview 3`       打开面板后选中第 3 条（从 0 开始数），并打开它的预览窗口
 /// - `-DemoBackdrop YES`    在面板 / 菜单后面垫一张彩色背景，让玻璃效果在截图里更明显，
 ///                          也避免截到屏幕上的其他内容
 /// - `-DemoSettingsHeight 580`  设置窗口的高度（截图时让窗口刚好停在某个分组的结尾）
@@ -59,18 +61,32 @@ enum DemoData {
     /// 按启动参数打开对应的窗口
     static func openRequestedWindows(app: AppModel) {
         let defaults = UserDefaults.standard
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        let updateMode = defaults.string(forKey: "DemoUpdate")
+        Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            // 先检查更新，这样打开的菜单、设置里就能直接看到"发现新版本"
+            if updateMode != nil {
+                await app.updater.checkForUpdates()
+            }
             switch defaults.string(forKey: "DemoOpen") {
             case "panel":
                 app.showPanel()
+                let panel = app.panelController
                 if let query = defaults.string(forKey: "DemoQuery") {
-                    app.panelController.viewModel.query = query
+                    panel.viewModel.query = query
+                }
+                if let index = Int(defaults.string(forKey: "DemoPreview") ?? ""),
+                   panel.viewModel.results.indices.contains(index) {
+                    panel.viewModel.selectedID = panel.viewModel.results[index].id
+                    panel.showPreview()
                 }
                 if defaults.bool(forKey: "DemoBackdrop") {
-                    placePanelOnBackdrop()
+                    placePanelOnBackdrop(panel)
                 }
             case "settings":
                 app.showSettings()
+            case "updates":
+                app.showSettings(revealUpdates: true)
             case "menu":
                 if defaults.bool(forKey: "DemoBackdrop") {
                     placeMenuBackdrop()
@@ -80,11 +96,8 @@ enum DemoData {
             default:
                 break
             }
-            if let mode = defaults.string(forKey: "DemoUpdate") {
-                Task {
-                    await app.updater.checkForUpdates()
-                    if mode == "install" { app.updater.installUpdate() }
-                }
+            if updateMode == "install" {
+                app.updater.installUpdate()
             }
         }
     }
@@ -149,22 +162,25 @@ enum DemoData {
 
     // MARK: - 截图辅助
 
-    /// 把面板挪到屏幕中间，并在它后面垫一张彩色背景（玻璃效果需要有东西在后面才看得出来）
-    private static func placePanelOnBackdrop() {
+    /// 把面板（和预览窗口）挪到屏幕中间，并在后面垫一张彩色背景（玻璃效果需要有东西在后面才看得出来）
+    private static func placePanelOnBackdrop(_ controller: PanelController) {
         guard let panel = NSApp.windows.first(where: { $0 is FloatingPanel }),
               let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
-        var origin = NSPoint(x: visible.midX - panel.frame.width / 2,
-                             y: visible.midY - panel.frame.height / 2)
+        // 面板和预览窗口作为一个整体居中
+        let group = panel.frame.union(controller.previewFrame ?? panel.frame)
+        var offset = NSPoint(x: visible.midX - group.midX, y: visible.midY - group.midY)
         // 鼠标停在面板上时，那一行会显示"悬停"的高亮，截图不好看，所以把面板挪到远离鼠标的一侧
         let mouse = NSEvent.mouseLocation
-        if NSRect(origin: origin, size: panel.frame.size).insetBy(dx: -70, dy: -50).contains(mouse) {
+        if group.offsetBy(dx: offset.x, dy: offset.y).insetBy(dx: -70, dy: -50).contains(mouse) {
             let quarter = visible.width / 4
-            origin.x = (mouse.x > visible.midX ? visible.minX + quarter : visible.maxX - quarter) - panel.frame.width / 2
+            let targetX = mouse.x > visible.midX ? visible.minX + quarter : visible.maxX - quarter
+            offset.x = targetX - group.midX
         }
-        panel.setFrameOrigin(origin)
+        panel.setFrameOrigin(NSPoint(x: panel.frame.minX + offset.x, y: panel.frame.minY + offset.y))
+        controller.repositionPreview()
 
-        let backdropFrame = panel.frame.insetBy(dx: -70, dy: -50)
+        let backdropFrame = panel.frame.union(controller.previewFrame ?? panel.frame).insetBy(dx: -70, dy: -50)
         let backdrop = NSWindow(contentRect: backdropFrame, styleMask: .borderless, backing: .buffered, defer: false)
         backdrop.level = NSWindow.Level(rawValue: panel.level.rawValue - 1)   // 紧贴在面板下面
         backdrop.isReleasedWhenClosed = false

@@ -6,7 +6,6 @@ import SwiftUI
 /// 这里只关心内容，并且会自动适应窗口的大小。
 struct HistoryPanelView: View {
     @Bindable var model: PanelViewModel
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         // 先算一次结果，避免在 body 里重复过滤
@@ -29,10 +28,8 @@ struct HistoryPanelView: View {
                 .background(WindowDragArea())   // 底部提示栏也可以拖动窗口
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            // 界面出现后让搜索框获得焦点，直接打字就能搜索
-            DispatchQueue.main.async { isSearchFocused = true }
-        }
+        // 注意：打开面板时搜索框故意不获得焦点，用户点了它才在里面输入。
+        // 没点搜索框就直接打字的话，PanelController 会关掉面板，把按键交还给原来的应用。
     }
 
     // MARK: - 搜索框
@@ -43,7 +40,6 @@ struct HistoryPanelView: View {
                 .foregroundStyle(.secondary)
             TextField("搜索剪贴板", text: $model.query)
                 .textFieldStyle(.plain)
-                .focused($isSearchFocused)
             if model.query.isEmpty {
                 Text("\(count)")
                     .font(.callout.monospacedDigit())
@@ -82,7 +78,7 @@ struct HistoryPanelView: View {
                         .id(item.id)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            model.onSelect?(item)
+                            model.click(item)
                         }
                         .contextMenu {
                             contextMenu(for: item)
@@ -105,6 +101,8 @@ struct HistoryPanelView: View {
     private func contextMenu(for item: ClipItem) -> some View {
         Button("粘贴") { model.onSelect?(item) }
         Button("仅复制到剪贴板") { model.onCopyOnly?(item) }
+        Button("预览") { model.preview(item) }
+            .keyboardShortcut("y", modifiers: .command)   // 在菜单里显示快捷键 ⌘Y，提示用户
         Divider()
         Button(item.isPinned ? "取消置顶" : "置顶") { model.store.togglePin(item) }
         Button("删除", role: .destructive) { model.store.delete(item) }
@@ -125,17 +123,28 @@ struct HistoryPanelView: View {
     // MARK: - 底部快捷键提示
 
     private var footer: some View {
-        HStack(spacing: 12) {
-            hint("↩", model.settings.autoPaste ? "粘贴" : "复制")
-            hint("⌘P", "置顶")
-            hint("⌘⌫", "删除")
-            Spacer()
-            hint("esc", "关闭")
+        // ViewThatFits 会依次尝试，用第一个放得下的：面板窄的时候少显示几个提示
+        ViewThatFits(in: .horizontal) {
+            footerHints(showPin: true, showDelete: true)
+            footerHints(showPin: true, showDelete: false)
+            footerHints(showPin: false, showDelete: false)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .frame(height: 30)
+    }
+
+    private func footerHints(showPin: Bool, showDelete: Bool) -> some View {
+        HStack(spacing: 12) {
+            hint("↩", model.settings.autoPaste ? "粘贴" : "复制")
+            // 有搜索词时空格要用来打字，所以提示换成 ⌘Y
+            hint(model.query.isEmpty ? "空格" : "⌘Y", "预览")
+            if showPin { hint("⌘P", "置顶") }
+            if showDelete { hint("⌘⌫", "删除") }
+            Spacer(minLength: 0)
+            hint("esc", "关闭")
+        }
     }
 
     private func hint(_ key: String, _ label: String) -> some View {

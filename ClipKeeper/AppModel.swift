@@ -52,6 +52,9 @@ final class AppModel {
 
         monitor.start()
         registerHotkey()
+        updater.startAutomaticChecks { [weak self] in
+            self?.settings.autoCheckForUpdates ?? false
+        }
 
         #if DEBUG
         // 调试用：用启动参数 `-ShowPanelOnLaunch YES` 运行时，启动后直接打开面板，方便查看界面
@@ -96,7 +99,11 @@ final class AppModel {
     }
 
     /// 打开设置窗口
-    func showSettings() {
+    /// - Parameter revealUpdates: 打开后滚动到"更新"分组（从菜单里的"发现新版本"进来时）
+    func showSettings(revealUpdates: Bool = false) {
+        if revealUpdates {
+            updater.wantsReveal = true
+        }
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(app: self)))
             window.title = "ClipKeeper 设置"
