@@ -17,6 +17,7 @@ struct SettingsView: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private let historyLimits = [50, 100, 200, 500, 1000]
+    private let cleanupDays = [1, 3, 7, 14, 30, 90, 180, 365]
 
     /// 设置窗口的高度。演示模式下可以用启动参数 `-DemoSettingsHeight` 调整，方便截图
     private static var windowHeight: CGFloat {
@@ -124,7 +125,16 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Section("数据") {
+                Section {
+                    Toggle("自动清理旧记录", isOn: $settings.autoCleanup)
+                    Picker("清理多久以前的记录", selection: $settings.autoCleanupDays) {
+                        ForEach(cleanupDays, id: \.self) { days in
+                            Text("\(days) 天前").tag(days)
+                        }
+                    }
+                    .disabled(!settings.autoCleanup)
+                    Toggle("置顶的记录也清理", isOn: $settings.autoCleanupIncludesPinned)
+                        .disabled(!settings.autoCleanup)
                     LabeledContent("已保存", value: "\(app.store.items.count) 条")
                     Button("在访达中打开数据文件夹") {
                         OpenHelper.openInFinder(ClipboardStore.dataFolderURL)
@@ -132,7 +142,17 @@ struct SettingsView: View {
                     Button("清空全部历史…", role: .destructive) {
                         showClearConfirm = true
                     }
+                } header: {
+                    Text("数据")
+                } footer: {
+                    Text("开启自动清理后，最后一次复制或使用在所选时间以前的记录会被删除（立即清理一次，之后每小时检查一次），删除后无法恢复。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                // 改了任何一项自动清理的设置，马上按新设置清理一次
+                .onChange(of: settings.autoCleanup) { app.store.applyAutoCleanup() }
+                .onChange(of: settings.autoCleanupDays) { app.store.applyAutoCleanup() }
+                .onChange(of: settings.autoCleanupIncludesPinned) { app.store.applyAutoCleanup() }
 
                 UpdateSection(updater: app.updater, settings: settings)
             }

@@ -338,6 +338,15 @@ final class PanelController: NSObject, NSWindowDelegate {
             togglePreview()
             return true
         }
+        if key == "f" {                                 // ⌘F 搜索
+            if isSearchFocused {
+                // 已经在搜索框里了：全选搜索词，方便直接输入新的（和浏览器里按 ⌘F 一样）
+                (panel?.firstResponder as? NSTextView)?.selectAll(nil)
+            } else {
+                viewModel.focusSearch()
+            }
+            return true
+        }
         if let number = Int(key), (1...9).contains(number) {   // ⌘1 ~ ⌘9 快速粘贴
             viewModel.quickSelect(index: number - 1)
             return true

@@ -93,6 +93,22 @@ final class ClipboardStore {
         saveAndReload()
     }
 
+    /// 自动清理：删除最后一次复制或使用在 N 天以前的记录。设置里没开启自动清理时什么也不做
+    func applyAutoCleanup() {
+        guard settings.autoCleanup,
+              let cutoff = Calendar.current.date(byAdding: .day, value: -settings.autoCleanupDays, to: .now) else { return }
+        let descriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { $0.createdAt < cutoff })
+        guard let oldItems = try? context.fetch(descriptor) else { return }
+        let expired = settings.autoCleanupIncludesPinned ? oldItems : oldItems.filter { !$0.isPinned }
+        guard !expired.isEmpty else { return }
+        for item in expired {
+            thumbnailCache.removeObject(forKey: item.id.uuidString as NSString)
+            largeImageCache.removeObject(forKey: item.id.uuidString as NSString)
+            context.delete(item)
+        }
+        saveAndReload()
+    }
+
     // MARK: - 读取数据
 
     /// 按关键字搜索。关键字为空时返回全部。

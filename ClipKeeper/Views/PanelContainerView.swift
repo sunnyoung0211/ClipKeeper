@@ -37,10 +37,13 @@ final class PanelContainerView: NSView {
     var onClickOutside: (() -> Void)?
 
     private let cornerRadius: CGFloat
-    /// 边缘多宽的范围内可以拖动缩放（玻璃边缘内外各算这么宽）
-    private let edgeThickness: CGFloat = 5
-    /// 角落的可拖动范围更大一些，方便同时调整宽和高
-    private let cornerSize: CGFloat = 18
+    /// 直边多宽的范围内可以拖动缩放：玻璃外面 6、里面 5
+    private let edgeOutside: CGFloat = 6
+    private let edgeInside: CGFloat = 5
+    /// 四个角：从角往两条边各延伸多长都算"角"（比圆角大一些，方便斜向拖动）
+    private var cornerLength: CGFloat { cornerRadius + 8 }
+    /// 四个角：圆弧往玻璃里面多宽的范围也算"角"
+    private let cornerInside: CGFloat = 6
 
     private let shadowView = PanelShadowView()
     private let glassView: NSView
@@ -144,23 +147,34 @@ final class PanelContainerView: NSView {
     }
 
     /// 计算某个点落在玻璃的哪些边上。注意：AppKit 视图坐标的原点在左下角，y 向上。
+    ///
+    /// 玻璃的四个角是圆角，看得见的边缘是一段圆弧，而不是矩形的直角。
+    /// 所以角落按"离圆弧多近"来判断：鼠标放在圆弧上、圆弧外面，或者圆弧里面一点点，都是斜向缩放。
     private func edges(at point: NSPoint) -> Edges {
         guard isResizable else { return [] }
         let g = glassFrame
-        let t = edgeThickness, c = cornerSize
         // 先排除离玻璃太远的点
-        guard g.insetBy(dx: -t, dy: -t).contains(point) else { return [] }
+        guard g.insetBy(dx: -edgeOutside, dy: -edgeOutside).contains(point) else { return [] }
 
-        let nearLeft = abs(point.x - g.minX) <= t
-        let nearRight = abs(point.x - g.maxX) <= t
-        let nearBottom = abs(point.y - g.minY) <= t
-        let nearTop = abs(point.y - g.maxY) <= t
+        // 1. 四个角：先看点在不在某个角的正方形范围里
+        let c = cornerLength
+        let horizontal: Edges = point.x < g.minX + c ? .left : (point.x > g.maxX - c ? .right : [])
+        let vertical: Edges = point.y < g.minY + c ? .bottom : (point.y > g.maxY - c ? .top : [])
+        if !horizontal.isEmpty && !vertical.isEmpty {
+            // 圆角所在圆的圆心，离圆心够远（靠近或超出圆弧）就是在拖这个角
+            let r = cornerRadius
+            let centerX = horizontal == .left ? g.minX + r : g.maxX - r
+            let centerY = vertical == .bottom ? g.minY + r : g.maxY - r
+            let distance = hypot(point.x - centerX, point.y - centerY)
+            return distance >= r - cornerInside ? horizontal.union(vertical) : []
+        }
 
+        // 2. 四条直边
         var edges: Edges = []
-        if nearLeft || ((nearTop || nearBottom) && point.x <= g.minX + c) { edges.insert(.left) }
-        if nearRight || ((nearTop || nearBottom) && point.x >= g.maxX - c) { edges.insert(.right) }
-        if nearBottom || ((nearLeft || nearRight) && point.y <= g.minY + c) { edges.insert(.bottom) }
-        if nearTop || ((nearLeft || nearRight) && point.y >= g.maxY - c) { edges.insert(.top) }
+        if point.x <= g.minX + edgeInside { edges.insert(.left) }
+        if point.x >= g.maxX - edgeInside { edges.insert(.right) }
+        if point.y <= g.minY + edgeInside { edges.insert(.bottom) }
+        if point.y >= g.maxY - edgeInside { edges.insert(.top) }
         return edges
     }
 
@@ -181,8 +195,12 @@ final class PanelContainerView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         resizingEdges = edges(at: point)
         if resizingEdges.isEmpty {
-            // 点在了玻璃外面的透明区域，看起来就是点在了面板外面
-            onClickOutside?()
+            // 点在了玻璃外面的透明区域，看起来就是点在了面板外面。
+            // 注意：玻璃里面没有控件处理的点击（比如列表的空白处、底部的提示文字）
+            // 也会一路传到这里来，这些要忽略，不能关掉面板
+            if !glassFrame.contains(point) {
+                onClickOutside?()
+            }
             return
         }
         dragStartMouse = NSEvent.mouseLocation

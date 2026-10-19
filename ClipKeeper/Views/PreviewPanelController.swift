@@ -141,4 +141,12 @@ final class PreviewPanelController {
 private final class PreviewPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// 让玻璃按"焦点窗口"的样子来画。
+    ///
+    /// 液态玻璃在不是焦点的窗口里会变成一种淡一些、发白的样子（表示"这个窗口现在没在用"）。
+    /// 预览窗口永远不会成为焦点窗口，但它其实是历史面板的一部分，应该和面板看起来一样。
+    /// 系统没有公开的设置项，这里用的是 AppKit 内部判断"窗口要不要显示成焦点样式"的属性：
+    /// 以后的系统如果改了名字，这一行只是不再起作用（预览会变回发白的样子），不会出错。
+    @objc var hasKeyAppearance: Bool { true }
 }

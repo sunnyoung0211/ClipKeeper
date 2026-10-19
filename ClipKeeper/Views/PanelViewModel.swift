@@ -16,6 +16,8 @@ final class PanelViewModel {
             if selectedID != oldValue { onSelectionChanged?() }
         }
     }
+    /// 每次加 1 表示"请让搜索框获得焦点"（按 ⌘F 时），界面监听到变化后去聚焦搜索框
+    private(set) var searchFocusRequest = 0
 
     @ObservationIgnored let store: ClipboardStore
     @ObservationIgnored let settings: AppSettings
@@ -63,6 +65,11 @@ final class PanelViewModel {
         } else {
             selectedID = item.id
         }
+    }
+
+    /// 让搜索框获得焦点，开始输入搜索词
+    func focusSearch() {
+        searchFocusRequest += 1
     }
 
     /// 选中某一条并打开它的预览

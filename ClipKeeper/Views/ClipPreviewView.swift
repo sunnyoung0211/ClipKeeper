@@ -136,9 +136,6 @@ struct ClipPreviewView: View {
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Text("esc 关闭")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, PreviewLayout.padding)
         .frame(height: PreviewLayout.headerHeight)

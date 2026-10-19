@@ -28,6 +28,21 @@ final class AppSettings {
         didSet { defaults.set(maxHistory, forKey: Keys.maxHistory) }
     }
 
+    /// 是否自动清理旧记录
+    var autoCleanup: Bool {
+        didSet { defaults.set(autoCleanup, forKey: Keys.autoCleanup) }
+    }
+
+    /// 自动清理多少天以前的记录（按最后一次复制或使用的时间算）
+    var autoCleanupDays: Int {
+        didSet { defaults.set(autoCleanupDays, forKey: Keys.autoCleanupDays) }
+    }
+
+    /// 自动清理时，置顶的记录是否也删除
+    var autoCleanupIncludesPinned: Bool {
+        didSet { defaults.set(autoCleanupIncludesPinned, forKey: Keys.autoCleanupIncludesPinned) }
+    }
+
     /// 选中历史后是否自动粘贴到当前应用
     var autoPaste: Bool {
         didSet { defaults.set(autoPaste, forKey: Keys.autoPaste) }
@@ -65,6 +80,9 @@ final class AppSettings {
         // 第一次运行时使用的默认值
         defaults.register(defaults: [
             Keys.maxHistory: 200,
+            Keys.autoCleanup: false,
+            Keys.autoCleanupDays: 30,
+            Keys.autoCleanupIncludesPinned: false,
             Keys.autoPaste: true,
             Keys.isPaused: false,
             Keys.panelPlacement: PanelPlacement.nearMouse.rawValue,
@@ -73,6 +91,9 @@ final class AppSettings {
             Keys.ignoredBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
         ])
         maxHistory = defaults.integer(forKey: Keys.maxHistory)
+        autoCleanup = defaults.bool(forKey: Keys.autoCleanup)
+        autoCleanupDays = defaults.integer(forKey: Keys.autoCleanupDays)
+        autoCleanupIncludesPinned = defaults.bool(forKey: Keys.autoCleanupIncludesPinned)
         autoPaste = defaults.bool(forKey: Keys.autoPaste)
         isPaused = defaults.bool(forKey: Keys.isPaused)
         hotkey = Self.loadHotkey(from: defaults)
@@ -96,6 +117,9 @@ final class AppSettings {
 
     private enum Keys {
         static let maxHistory = "maxHistory"
+        static let autoCleanup = "autoCleanup"
+        static let autoCleanupDays = "autoCleanupDays"
+        static let autoCleanupIncludesPinned = "autoCleanupIncludesPinned"
         static let autoPaste = "autoPaste"
         static let isPaused = "isPaused"
         static let hotkey = "hotkey"

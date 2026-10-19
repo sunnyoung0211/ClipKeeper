@@ -25,6 +25,8 @@ final class AppModel {
     /// 是否正在录制新快捷键（录制期间暂停当前的快捷键）
     private var isHotkeyPaused = false
     private var settingsWindow: NSWindow?
+    /// 每小时检查一次要不要自动清理旧记录
+    private var cleanupTimer: Timer?
 
     private init() {
         settings = AppSettings()
@@ -52,6 +54,7 @@ final class AppModel {
 
         monitor.start()
         registerHotkey()
+        startAutoCleanup()
         updater.startAutomaticChecks { [weak self] in
             self?.settings.autoCheckForUpdates ?? false
         }
@@ -115,6 +118,22 @@ final class AppModel {
         // 菜单栏应用默认不在前台，需要主动激活，窗口才会显示在最前面
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - 自动清理
+
+    /// 启动时清理一次旧记录，之后每小时检查一次
+    private func startAutoCleanup() {
+        store.applyAutoCleanup()
+        let timer = Timer(timeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                // 面板开着时先不删，免得用户正在看、正在预览的记录突然消失，下个小时再清理
+                guard let self, !self.panelController.isVisible else { return }
+                self.store.applyAutoCleanup()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        cleanupTimer = timer
     }
 
     // MARK: - 快捷键

@@ -6,6 +6,8 @@ import SwiftUI
 /// 这里只关心内容，并且会自动适应窗口的大小。
 struct HistoryPanelView: View {
     @Bindable var model: PanelViewModel
+    /// 搜索框是否获得了焦点（只在用户点它、或按 ⌘F 时才设为 true）
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         // 先算一次结果，避免在 body 里重复过滤
@@ -13,7 +15,9 @@ struct HistoryPanelView: View {
 
         VStack(spacing: 0) {
             searchBar(count: results.count)
-                .padding(10)
+                .padding(.horizontal, 10)
+                .padding(.top, 14)   // 上面比其他三边多留一点：最上面几点是拖边缩放的区域，剩下的才能拖动窗口
+                .padding(.bottom, 10)
                 .background(WindowDragArea())   // 搜索框四周的空白处可以拖动窗口
 
             if results.isEmpty {
@@ -28,8 +32,11 @@ struct HistoryPanelView: View {
                 .background(WindowDragArea())   // 底部提示栏也可以拖动窗口
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // 注意：打开面板时搜索框故意不获得焦点，用户点了它才在里面输入。
+        // 注意：打开面板时搜索框故意不获得焦点，用户点了它（或按 ⌘F）才在里面输入。
         // 没点搜索框就直接打字的话，PanelController 会关掉面板，把按键交还给原来的应用。
+        .onChange(of: model.searchFocusRequest) {
+            isSearchFieldFocused = true
+        }
     }
 
     // MARK: - 搜索框
@@ -40,6 +47,7 @@ struct HistoryPanelView: View {
                 .foregroundStyle(.secondary)
             TextField("搜索剪贴板", text: $model.query)
                 .textFieldStyle(.plain)
+                .focused($isSearchFieldFocused)
             if model.query.isEmpty {
                 Text("\(count)")
                     .font(.callout.monospacedDigit())
@@ -59,6 +67,11 @@ struct HistoryPanelView: View {
         .frame(height: 34)
         // 在玻璃上做出一个淡淡的"凹槽"当作输入框，有层次感又不会显得厚重
         .background(.primary.opacity(0.06), in: Capsule())
+        // 点胶囊里的任何地方（放大镜、条数、两端的空白）都开始输入，不用非得点中间的文字
+        .contentShape(Capsule())
+        .onTapGesture {
+            isSearchFieldFocused = true
+        }
     }
 
     // MARK: - 列表
@@ -131,6 +144,8 @@ struct HistoryPanelView: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+        // 提示文字只是给人看的，不接收点击：这样按住文字也能拖动窗口，整条提示栏都是拖动区域
+        .allowsHitTesting(false)
         .padding(.horizontal, 14)
         .frame(height: 30)
     }
@@ -140,10 +155,10 @@ struct HistoryPanelView: View {
             hint("↩", model.settings.autoPaste ? "粘贴" : "复制")
             // 有搜索词时空格要用来打字，所以提示换成 ⌘Y
             hint(model.query.isEmpty ? "空格" : "⌘Y", "预览")
+            hint("⌘F", "搜索")
             if showPin { hint("⌘P", "置顶") }
             if showDelete { hint("⌘⌫", "删除") }
             Spacer(minLength: 0)
-            hint("esc", "关闭")
         }
     }
 
